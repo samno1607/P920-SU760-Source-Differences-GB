@@ -2970,7 +2970,7 @@ static int __devinit twl6030_bci_battery_probe(struct platform_device *pdev)
 #endif
 
 
-#if 1
+#if 0
 	ret = gpio_request(OMAP_SEND, "gauge_reset");
 	if (ret < 0) {
 		printk(KERN_ERR "%s: Failed to request GPIO_%d for charging_ic\n", __func__, OMAP_SEND);

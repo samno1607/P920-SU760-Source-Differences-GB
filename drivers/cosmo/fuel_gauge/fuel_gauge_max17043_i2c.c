@@ -938,7 +938,9 @@ static int __devinit max17043_probe(struct i2c_client *client,
 	ret = enable_irq_wake(gpio_to_irq(GAUGE_INT));
 	if (ret < 0) {
 		printk(KERN_DEBUG "[MAX17043] set GAUGE_INT to wakeup source failed.\n");
+#if 0
 		goto err_request_wakeup_irq_failed;
+#endif
 	}
 	//enable_irq(gpio_to_irq(GAUGE_INT));
 	chip->client = client;

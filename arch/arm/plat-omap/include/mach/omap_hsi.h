@@ -132,10 +132,11 @@
 #define HSI_SSI_WAKE_MASK		0xff	/* for SSI */
 #define HSI_WAKE_MASK			0xffff	/* for HSI */
 #define HSI_SET_WAKE_4_WIRES		(0 << 16)
+#define HSI_SET_WAKE_3_WIRES		(1 << 16)
+#define HSI_SET_WAKE_3_WIRES_MASK	0xfffcffff /* 3-wires + ACREADY to 1 */
 #define HSI_SET_WAKE_READY_LVL_0	(0 << 17)
-#define HSI_SET_WAKE(channel)		(1 << (channel) |\
-						HSI_SET_WAKE_4_WIRES |\
-						HSI_SET_WAKE_READY_LVL_0)
+#define HSI_SET_WAKE_READY_LVL_1	(1 << 17)
+#define HSI_SET_WAKE(channel)		(1 << (channel))
 #define HSI_CLEAR_WAKE(channel)		(1 << (channel))
 #define HSI_WAKE(channel)		(1 << (channel))
 
@@ -285,12 +286,12 @@
 /* Default FT value: 2 x max_bits_per_frame + 20% margin */
 #define HSI_COUNTERS_FT_DEFAULT		(90 << HSI_COUNTERS_FT_OFFSET)
 #define HSI_COUNTERS_TB_DEFAULT		(6 << HSI_COUNTERS_TB_OFFSET)
-#define HSI_COUNTERS_FB_DEFAULT		(8 << HSI_COUNTERS_FB_OFFSET)
+#define HSI_COUNTERS_FB_DEFAULT		(0xFF << HSI_COUNTERS_FB_OFFSET)
 
 #define HSI_HSR_COMBINE_COUNTERS(FB, TB, FT)				  \
-		(((FB << HSI_COUNTERS_FB_OFFSET) & HSI_COUNTERS_FB_MASK) \
-		 ((TB << HSI_COUNTERS_TB_OFFSET) & HSI_COUNTERS_TB_MASK) \
-		 ((FT << HSI_COUNTERS_FT_OFFSET) & HSI_COUNTERS_FT_MASK))
+		((((FB) << HSI_COUNTERS_FB_OFFSET) & HSI_COUNTERS_FB_MASK) \
+		 (((TB) << HSI_COUNTERS_TB_OFFSET) & HSI_COUNTERS_TB_MASK) \
+		 (((FT) << HSI_COUNTERS_FT_OFFSET) & HSI_COUNTERS_FT_MASK))
 /* For SSI */
 #define SSI_SSR_COMBINE_COUNTERS(FT)				  \
 		((FT << HSI_SSI_RX_TIMEOUT_OFFSET) & HSI_SSI_RX_TIMEOUT_MASK)
@@ -358,7 +359,7 @@
 #define HSI_DST_BURST_EN_MASK		0xc000
 #define HSI_DST_SINGLE_ACCESS0		0
 #define HSI_DST_SINGLE_ACCESS		(1 << 14)
-#define HSI_DST_BURST_4X32_BIT		(2 << 14)
+#define HSI_DST_BURST_4x32_BIT		(2 << 14)
 #define HSI_DST_BURST_8x32_BIT		(3 << 14)
 
 #define HSI_DST_MASK			0x1e00

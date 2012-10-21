@@ -18,13 +18,8 @@
 #else
 #define NFC_GPIO_IRQ			  4
 #define NFC_GPIO_VEN			  61
-#if defined (CONFIG_MACH_LGE_CX2_REV_A)
 #define NFC_GPIO_FRIM			  49
 #define NFC_I2C_SLAVE_ADDR		0x2B // for B2
-#else
-#define NFC_GPIO_FRIM			  42
-#define NFC_I2C_SLAVE_ADDR		0x28 
-#endif
 //#define NFC_I2C_SLAVE_ADDR		0x28 // For HDK
 #endif
 struct pn544_i2c_platform_data {

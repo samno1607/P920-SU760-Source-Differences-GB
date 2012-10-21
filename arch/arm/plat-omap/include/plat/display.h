@@ -527,7 +527,7 @@ struct omap_overlay_info {
 	u8 rotation;
 	enum omap_dss_rotation_type rotation_type;
 	bool mirror;
-	int status;  
+	int status; 
 	char  manager[16];
 	u16 pos_x;
 	u16 pos_y;

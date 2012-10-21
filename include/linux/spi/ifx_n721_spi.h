@@ -53,7 +53,7 @@
 //#define MODEM_GPIO_PWRON		110
 #define MODEM_GPIO_PWRON		164
 
-#define MODEM_GPIO_PWRON_SW		3   	
+#define MODEM_GPIO_PWRON_SW		3   
 
 #endif
 

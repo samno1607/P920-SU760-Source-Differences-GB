@@ -609,8 +609,10 @@ int dpll_cascading_blocker_release(struct device *dev)
 			ret = -EINVAL;
 			goto out;
 		}
-	}else
+	}else {
 		list_del(&blocker->node);
+		kfree(blocker);
+	}
 
 	if (list_empty(&dpll_cascading_blocker_list)
 			&& !in_dpll_cascading && num_online_cpus() == 1) {

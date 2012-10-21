@@ -546,7 +546,6 @@ static inline void set_24xx_gpio_triggering(struct gpio_bank *bank, int gpio,
 {
 	void __iomem *base = bank->base;
 	u32 gpio_bit = 1 << gpio;
-	u32 val;
 
 	if (cpu_is_omap44xx()) {
 		MOD_REG_BIT(OMAP4_GPIO_LEVELDETECT0, gpio_bit,
@@ -569,15 +568,8 @@ static inline void set_24xx_gpio_triggering(struct gpio_bank *bank, int gpio,
 	}
 	if (likely(!(bank->non_wakeup_gpios & gpio_bit))) {
 		if (cpu_is_omap44xx()) {
-			if (trigger != 0)
-				__raw_writel(1 << gpio, bank->base+
-						OMAP4_GPIO_IRQWAKEN0);
-			else {
-				val = __raw_readl(bank->base +
-							OMAP4_GPIO_IRQWAKEN0);
-				__raw_writel(val & (~(1 << gpio)), bank->base +
-							 OMAP4_GPIO_IRQWAKEN0);
-			}
+			MOD_REG_BIT(OMAP4_GPIO_IRQWAKEN0, gpio_bit,
+				trigger != 0);
 		} else {
 			/*
 			 * GPIO wakeup request can only be generated on edge
@@ -591,8 +583,10 @@ static inline void set_24xx_gpio_triggering(struct gpio_bank *bank, int gpio,
 					+ OMAP24XX_GPIO_CLEARWKUENA);
 		}
 	}
-	/* This part needs to be executed always for OMAP34xx */
-	if (cpu_is_omap34xx() || (bank->non_wakeup_gpios & gpio_bit)) {
+
+	/* This part needs to be executed always for OMAP{34xx, 44xx} */
+	if (cpu_is_omap34xx() || cpu_is_omap44xx() ||
+			(bank->non_wakeup_gpios & gpio_bit)) {
 		/*
 		 * Log the edge gpio and manually trigger the IRQ
 		 * after resume if the input level changes
@@ -1249,8 +1243,11 @@ static void gpio_irq_shutdown(unsigned int irq)
 {
 	unsigned int gpio = irq - IH_GPIO_BASE;
 	struct gpio_bank *bank = get_irq_chip_data(irq);
+	unsigned long flags;
 
+	spin_lock_irqsave(&bank->lock, flags);
 	_reset_gpio(bank, gpio);
+	spin_unlock_irqrestore(&bank->lock, flags);
 }
 
 static void gpio_ack_irq(unsigned int irq)
@@ -1265,9 +1262,12 @@ static void gpio_mask_irq(unsigned int irq)
 {
 	unsigned int gpio = irq - IH_GPIO_BASE;
 	struct gpio_bank *bank = get_irq_chip_data(irq);
+	unsigned long flags;
 
+	spin_lock_irqsave(&bank->lock, flags);
 	_set_gpio_irqenable(bank, gpio, 0);
 	_set_gpio_triggering(bank, get_gpio_index(gpio), IRQ_TYPE_NONE);
+	spin_unlock_irqrestore(&bank->lock, flags);
 }
 
 static void gpio_unmask_irq(unsigned int irq)
@@ -1277,7 +1277,9 @@ static void gpio_unmask_irq(unsigned int irq)
 	unsigned int irq_mask = 1 << get_gpio_index(gpio);
 	struct irq_desc *desc = irq_to_desc(irq);
 	u32 trigger = desc->status & IRQ_TYPE_SENSE_MASK;
+	unsigned long flags;
 
+	spin_lock_irqsave(&bank->lock, flags);
 	if (trigger)
 		_set_gpio_triggering(bank, get_gpio_index(gpio), trigger);
 
@@ -1289,6 +1291,7 @@ static void gpio_unmask_irq(unsigned int irq)
 	}
 
 	_set_gpio_irqenable(bank, gpio, 1);
+	spin_unlock_irqrestore(&bank->lock, flags);
 }
 
 static struct irq_chip gpio_irq_chip = {
@@ -1575,20 +1578,17 @@ static void omap_gpio_mod_init(struct gpio_bank *bank)
 {
 	if (cpu_class_is_omap2()) {
 		if (cpu_is_omap44xx()) {
-//LGE_CHANGE_S [david.seo@lge.com] 2011-01-30, common : after sleep, incomming call bug fix
-#if 1     /* JamesLee */
+#if 1     
 			static const u32 non_wakeup_gpios[] = {
-				0x04000000, // 31 ~ 00		26: CP_CRASH_INT
-				0x00100500, // 63 ~ 32		40:MICROSD_DET	42:MICROSD_COVER_DET	52: TOUCH_INT
+				0x04210000, // 31 ~ 00		26: CP_CRASH_INT	21: GAUGE_INT		16: PROXI_INT
+				0x00100500, // 63 ~ 32		52: TOUCH_INT	42:MICROSD_COVER_DET	40:MICROSD_DET
 				0x00000000, // 95 ~ 64
-// LGE_CHANGE [MIPI-HSI] jaesung.woo@lge.com [START]
 /* Disable SPI codes in case of MIPI HSI */
 #if defined(CONFIG_OMAP_HSI)
-				0x00000000,
+				0x04000000,	// 127 ~ 96		122: OMAP_SEND
 #else /* CONFIG_SPI_IFX */
 				0x00800000, // 127 ~ 96		119: IPC_SRDY
 #endif
-// LGE_CHANGE [MIPI-HSI] jaesung.woo@lge.com [END]		
 				0x00000000, // 159 ~ 128
 				0x000000C0  // 191 ~ 160	167: WLAN_HOST_WAKEUP		166: BT
 			};
@@ -1596,7 +1596,6 @@ static void omap_gpio_mod_init(struct gpio_bank *bank)
 				bank->non_wakeup_gpios =
 						non_wakeup_gpios[bank->id];
 #endif
-//LGE_CHANGE_E [david.seo@lge.com] 2011-01-30, common : after sleep, incomming call bug fix
 
 			__raw_writel(0xffffffff, bank->base +
 					OMAP4_GPIO_IRQSTATUSCLR0);

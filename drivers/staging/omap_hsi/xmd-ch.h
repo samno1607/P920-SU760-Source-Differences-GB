@@ -42,6 +42,7 @@
 
 #define XMD_TTY_CIQ_CHANNEL			11
 #endif
+
 typedef enum _HSI_CH_USER_
 {
 	XMD_TTY,
@@ -56,6 +57,7 @@ struct xmd_ch_info {
 	void *priv;
 	int open_count;
 	spinlock_t lock;
+	char throttled;	
 };
 
 struct hsi_board_info {
@@ -97,8 +99,10 @@ int wait_for_xmd_ack(void);
 
 #if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
 extern void ifx_schedule_cp_dump_or_reset(void);
-extern void xmd_set_ifx_cp_dump(void);
+extern void xmd_set_ifx_cp_dump(int type);
 #endif
+
+extern void rmnet_sync_down_for_recovery(void);
 
 int xmd_is_recovery_state(void);
 

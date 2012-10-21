@@ -132,7 +132,6 @@ int hsi_mem_init(void)
 		hsi_mem_fb_block[i] = NULL;
 	}
 #endif
-	
 #endif
 	spin_lock_init(&hsi_mem_lock);
 
@@ -380,7 +379,7 @@ void hsi_mem_free(void* buf)
 	for (i=0; i < HSI_MEM_NUM_OF_FB_BLK; i++) {
 		if (hsi_mem_fb_block[i] == fb_mem) {
 #if defined (HSI_MEM_ENABLE_LOGS)
-			printk("\nhsi_mem: free fall back mem %x", fb_mem);
+			printk("\nhsi_mem: free fall back mem %x", (unsigned int)fb_mem);
 #endif
 			kfree(fb_mem);
 			hsi_mem_fb_block[i] = NULL;

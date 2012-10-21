@@ -220,9 +220,11 @@ long hsi_hst_bufstate_f_reg(struct hsi_dev *hsi_ctrl,
 	int fifo;
 	if (hsi_driver_device_is_hsi(to_platform_device(hsi_ctrl->dev))) {
 		fifo = hsi_fifo_get_id(hsi_ctrl, channel, port);
-		if (unlikely(fifo < 0))
+		if (unlikely(fifo < 0)) {
+			dev_err(hsi_ctrl->dev,
+				"hsi_hst_bufstate_f_reg  ERROR : %d\n", fifo);
 			return fifo;
-		else
+		} else
 			return HSI_HST_BUFSTATE_FIFO_REG(fifo);
 	} else {
 		return HSI_HST_BUFSTATE_REG(port);
@@ -246,9 +248,11 @@ long hsi_hsr_bufstate_f_reg(struct hsi_dev *hsi_ctrl,
 	int fifo;
 	if (hsi_driver_device_is_hsi(to_platform_device(hsi_ctrl->dev))) {
 		fifo = hsi_fifo_get_id(hsi_ctrl, channel, port);
-		if (unlikely(fifo < 0))
+		if (unlikely(fifo < 0)) {
+			dev_err(hsi_ctrl->dev,
+				"hsi_hsr_bufstate_f_reg  ERROR : %d\n", fifo);
 			return fifo;
-		else
+		} else
 			return HSI_HSR_BUFSTATE_FIFO_REG(fifo);
 	} else {
 		return HSI_HSR_BUFSTATE_REG(port);
@@ -272,9 +276,11 @@ long hsi_hst_buffer_reg(struct hsi_dev *hsi_ctrl,
 	int fifo;
 	if (hsi_driver_device_is_hsi(to_platform_device(hsi_ctrl->dev))) {
 		fifo = hsi_fifo_get_id(hsi_ctrl, channel, port);
-		if (unlikely(fifo < 0))
+		if (unlikely(fifo < 0)) {
+			dev_err(hsi_ctrl->dev,
+				"hsi_hst_bufstate_f_reg   ERROR : %d\n", fifo);
 			return fifo;
-		else
+		} else
 			return HSI_HST_BUFFER_FIFO_REG(fifo);
 	} else {
 		return HSI_HST_BUFFER_CH_REG(port, channel);
@@ -298,9 +304,11 @@ long hsi_hsr_buffer_reg(struct hsi_dev *hsi_ctrl,
 	int fifo;
 	if (hsi_driver_device_is_hsi(to_platform_device(hsi_ctrl->dev))) {
 		fifo = hsi_fifo_get_id(hsi_ctrl, channel, port);
-		if (unlikely(fifo < 0))
+		if (unlikely(fifo < 0)) {
+			dev_err(hsi_ctrl->dev,
+				"hsi_hsr_bufstate_f_reg  ERROR : %d\n", fifo);
 			return fifo;
-		else
+		} else
 			return HSI_HSR_BUFFER_FIFO_REG(fifo);
 	} else {
 		return HSI_HSR_BUFFER_CH_REG(port, channel);
@@ -391,6 +399,8 @@ u8 hsi_hst_fifo_flush_channel(struct hsi_dev *hsi_ctrl, unsigned int port,
 		/* Warning : All TX FIFOs are flushed */
 		hsi_outl(0, hsi_ctrl->base, HSI_HST_TXSTATE_REG(port));
 		return 0;
+	} else {
+		dev_dbg(hsi_ctrl->dev, "HST FIFO Flush not possible on HSI\n");
 	}
 
 	return 0;

@@ -117,6 +117,7 @@ int hsi_ll_shutdown(void);
 enum {
 	HSI_LL_RESET_RECOVERY 		=  0,
 	HSI_LL_RESET_IFX_COREDUMP 	=  1,
+	HSI_LL_RESET_BREAK		 	=  2,	
 };
 
 int hsi_ll_reset(int type);

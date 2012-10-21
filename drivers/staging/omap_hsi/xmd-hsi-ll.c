@@ -35,6 +35,13 @@
 #include "xmd-ch.h"
 #endif
 
+#if defined(HSI_LL_WAKE_LOCK)
+#include <linux/wakelock.h>
+
+static struct wake_lock hsi_acwake_lock;
+static struct wake_lock hsi_cawake_lock;
+#endif
+
 #if !defined(HSI_LL_DATA_MUL_OF_16)
 
 #define HSI_LL_GET_SIZE_IN_WORDS(size)                       \
@@ -467,7 +474,11 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 #if defined (HSI_LL_ENABLE_CRITICAL_LOG)
 	printk("\nHSI_LL: channel %d CP => AP CMD = 0x%x.\n", channel, hsi_ll_data.rx_cmd);
 #endif
-	if (hsi_ll_if.rd_complete_flag != 1) {
+
+#if 0
+	if (hsi_ll_if.rd_complete_flag != 1)
+#endif
+	{
 		/* Raise an event */
 		hsi_ll_if.rd_complete_flag = 1;
 		wake_up_interruptible(&hsi_ll_if.rd_complete);
@@ -693,21 +704,40 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 		break;
 	case HSI_LL_MSG_OPEN_CONN_OCTET: {
 #if defined (MIPI_HSI_CP_OPEN_CONN_ID_FOR_RETRY)
-		if(hsi_ll_data.ch[channel].rx.open_id == new_open_id) {
-#if defined (HSI_LL_ENABLE_ERROR_LOG)			
-			printk("\nHSI_LL:WARN: Resend open_conn from CP. Already proccessed channel %d open_id %d new_open_id %d %s %d\n",
-					channel, hsi_ll_data.ch[channel].rx.open_id, new_open_id, __func__, __LINE__);
+		if((hsi_ll_data.ch[channel].rx.open_id == new_open_id) && (hsi_ll_data.ch[channel].rx.open_size == param)) {
+			if(hsi_ll_data.ch[channel].rx.retry_cnt > MIPI_HSI_CP_MAX_OPEN_CONN_ID_RETRY) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:WARN: Modem slient reset without any notification. channel %d open_id %d new_open_id %d retry_cnt %d %s %d\n",
+							channel, hsi_ll_data.ch[channel].rx.open_id, new_open_id, hsi_ll_data.ch[channel].rx.retry_cnt, __func__, __LINE__);
 #endif
-			break;
+				hsi_ll_data.ch[channel].rx.open_id = new_open_id;
+				hsi_ll_data.ch[channel].rx.open_size = param;
+				hsi_ll_data.ch[channel].rx.retry_cnt = 0;
+			}
+			else {
+				hsi_ll_data.ch[channel].rx.retry_cnt++;
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				if(hsi_ll_data.ch[channel].rx.retry_cnt == MIPI_HSI_CP_MAX_OPEN_CONN_ID_RETRY) {
+					printk("\nHSI_LL:WARN: Resend open_conn from CP. Already proccessed channel %d open_id %d new_open_id %d retry_cnt %d %s %d \n",
+						channel, hsi_ll_data.ch[channel].rx.open_id, new_open_id, hsi_ll_data.ch[channel].rx.retry_cnt, __func__, __LINE__);
+				}
+#endif
+				goto quit_rd_cmd_cb;
+			}
 		}
-
+		else {
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
-		printk("\nHSI_LL: Open_connect for ch %d. open_id %d. new_open_id %d\n",
-				channel, hsi_ll_data.ch[channel].rx.open_id, new_open_id);
+			printk("\nHSI_LL: Open_connect for ch %d. open_id %d. new_open_id %d retry_cnt %d\n",
+				channel, hsi_ll_data.ch[channel].rx.open_id, new_open_id, hsi_ll_data.ch[channel].rx.retry_cnt);
+#endif			
+			hsi_ll_data.ch[channel].rx.open_id = new_open_id;
+			hsi_ll_data.ch[channel].rx.open_size = param;
+			
+			if(hsi_ll_data.ch[channel].rx.retry_cnt > 0)
+				hsi_ll_data.ch[channel].rx.retry_cnt = 0;
+		}
 #endif
-
-		hsi_ll_data.ch[channel].rx.open_id = new_open_id;
-#endif
+		
 		switch(hsi_ll_data.ch[channel].rx.state) {
 			case HSI_LL_RX_STATE_IDLE: {
 				struct hsi_ll_rx_tx_data temp_data;
@@ -736,13 +766,12 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 							temp_data.size,channel);
 #endif
 					hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_BLOCKED;
-					goto quit_rd_cmd_cb;
-#else
+#endif 
+
 					hsi_ll_send_command(HSI_LL_MSG_NAK,
 										channel,
 										NULL,
 										HSI_LL_PHY_ID_RX);
-#endif
 				} else {
 					unsigned int size = hsi_ll_data.ch[channel].rx.size;
 					unsigned int *buf = temp_data.buffer;
@@ -759,6 +788,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 				}
 			}
 			break;
+
 /* P2 issue : CP Open Conn Retry Workaround  : NAK stops retry open conn timer */
 #if defined (MIPI_HSI_CP_OPEN_CONN_NAK_FOR_RETRY)
 #if defined (HSI_LL_ENABLE_RX_BUF_RETRY_WQ)
@@ -767,7 +797,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 				printk("\nHSI_LL:Error: Resend open_conn from CP. send NAK Current channel %d state %d. %s %d\n",
 						channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
-#endif
+#endif 
 				hsi_ll_data.ch[channel].rx.nak_sent = 1;
 				hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
 				hsi_ll_start_rx_timer(channel, HSI_LL_RX_T_ACK_NACK_MS);
@@ -780,7 +810,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 			}
 			}
 			break;
-#endif
+#endif 
 			
 		case HSI_LL_RX_STATE_RX:
 			if (hsi_ll_data.ch[channel].rx.nak_sent == 0) {
@@ -800,7 +830,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 			}
 			
 			break;
-#endif
+#endif 
 
          default:
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
@@ -811,6 +841,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 		}
 		}
 		break;
+
 	default:
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL:Error.Invalid message encountered for channel %d. %s %d\n",
@@ -894,7 +925,10 @@ static void hsi_ll_write_complete_cb(struct hsi_device *dev, unsigned int size)
 	printk("\nHSI_LL:Write Complete callback.%s %d\n", __func__, __LINE__);
 #endif
 
-	if (hsi_ll_if.wr_complete_flag != 1) {
+#if 0
+	if (hsi_ll_if.wr_complete_flag != 1)
+#endif
+	{
 		/* Raise an event */
 		hsi_ll_if.wr_complete_flag = 1;
 		hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_TX_STATE_IDLE;
@@ -968,9 +1002,34 @@ static int hsi_ll_config_bus(void)
 	return ret;
 }
 
+static int hsi_ll_check_idle(int log_enable)
+{
+	unsigned int channel = 0;
+
+	for(channel = 0; channel < HSI_LL_MAX_CHANNELS; channel++) {
+		
+		if ((hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_IDLE) ||
+			(hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_IDLE)){
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+			if(log_enable == 1) {
+				printk("\nHSI_LL:hsi_ll_check_idle - Channel[%d] is busy with TX status %d and RX status %d\n",
+					channel, hsi_ll_data.ch[channel].tx.state, hsi_ll_data.ch[channel].rx.state);
+			}
+#endif			
+			break;
+		}
+	}
+
+	if (channel >= HSI_LL_MAX_CHANNELS) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static int hsi_ll_wr_ctrl_ch_th(void *data)
 {
-	int ret, i;
+	int ret, i, rc;
 	unsigned int command, channel;
 	unsigned int phy_id;
 
@@ -1010,7 +1069,9 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 		return -1;
 	}
 
+#if !defined (HSI_LL_ENABLE_PM)
 	hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH);
+#endif
 
 	ret = hsi_ll_create_rx_thread();
 
@@ -1047,10 +1108,17 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 																 &channel,
 																 &phy_id)) {
 #if defined (HSI_LL_ENABLE_PM)
-			wait_event_interruptible_timeout(hsi_ll_if.msg_avaliable,
+
+#if 0
+				if(wake_lock_active(&hsi_acwake_lock))
+					wake_unlock(&hsi_acwake_lock);
+				wake_lock_timeout(&hsi_acwake_lock, HSI_LL_AC_WAKE_TIMEOUT);
+#endif
+
+			rc = wait_event_interruptible_timeout(hsi_ll_if.msg_avaliable,
 											 hsi_ll_if.msg_avaliable_flag == 1,
 											 HSI_LL_PV_READ_CMD_Q_TIMEOUT);
-			if (hsi_ll_if.msg_avaliable_flag == 0) {
+			if (rc == 0) {
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 				printk("HSI_LL: HSI LL msg_avaliable_flag == 0\n");
 #endif
@@ -1061,6 +1129,11 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 					wake_up_interruptible(&hsi_ll_if.psv_event);
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 					printk("\nHSI_LL: PSV enable requested.\n");
+#endif
+				}
+				else {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+					printk("HSI_LL: HSI LL msg_avaliable_flag == 0, but hsi_ll_data.state %d\n", hsi_ll_data.state);
 #endif
 				}
 #endif
@@ -1104,8 +1177,16 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 			printk("\nHSI_LL: Requesting AC wake line High.\n");
 #endif
+
+#if 0 
+			if(wake_lock_active(&hsi_acwake_lock))
+				wake_unlock(&hsi_acwake_lock);
+			wake_lock(&hsi_acwake_lock);
+#endif
+
 			hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH);
 		}
+
 #if defined (HSI_LL_ENABLE_CRITICAL_LOG)
 		printk("\nHSI_LL: channel %d : AP => CP CMD = 0x%x \n", channel, command);
 #endif
@@ -1124,16 +1205,29 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 						hsi_ll_tx_cmd_data,
 						4);
 #endif
+		if (ret == 0) {
+			wait_event_interruptible(hsi_ll_if.wr_complete,
+									 hsi_ll_if.wr_complete_flag == 1);
+			hsi_ll_if.wr_complete_flag = 0;
+		}
+		else {
+				struct hsi_ll_rx_tx_data temp;
+
+				hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_TX_STATE_IDLE;
+				
+				hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_IDLE;
+				temp.buffer = hsi_ll_data.ch[channel].tx.buffer;
+				temp.size	= hsi_ll_data.ch[channel].tx.size;
+				hsi_ll_data.ch[channel].tx.buffer = NULL;
 
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		if (ret != 0) {
-			printk("\nHSI_LL: hsi_write(...) failed for ctrl chanel, err=%d. %s %d",
-					 ret, __func__, __LINE__);
-		}
+				printk("\nHSI_LL: hsi_write(...) failed for ctrl chanel, ch %d err=%d. %s %d",
+					 channel, ret, __func__, __LINE__);
 #endif
-		wait_event_interruptible(hsi_ll_if.wr_complete,
-								 hsi_ll_if.wr_complete_flag == 1);
-		hsi_ll_if.wr_complete_flag = 0;
+				hsi_ll_cb(channel, HSI_LL_RESULT_SUCCESS,
+						  HSI_LL_EV_WRITE_COMPLETE,
+						 &temp);
+		}
 	}
 
 	return 0;
@@ -1182,8 +1276,52 @@ static int hsi_ll_rd_ctrl_ch_th(void *data)
 }
 
 #if defined (MIPI_HSI_CHECK_CP_RX_INFO)
-/* TODO: Fine tune to required value. */
 #define HSI_CHECK_CP_INFO_TIMEOUT		(1 * HZ)
+#define HSI_CHECK_CP_INFO_MAX_RETRY		2
+
+static int hsi_ll_send_data(int channel)
+{
+	int ret = 0, rc = 0;
+	unsigned int size = hsi_ll_data.ch[channel].tx.size;
+
+	hsi_ll_stop_tx_timer(channel);
+	hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_TX;
+
+	HSI_LL_GET_SIZE_IN_WORDS(size);
+
+#if 0
+	if (hsi_ll_data.tx_cfg.ac_wake == HSI_LL_WAKE_LINE_LOW) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+		printk("\nHSI_LL: Requesting AC wake line High.\n");
+#endif
+		hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH);
+	}
+#endif
+
+	rc = hsi_write(hsi_ll_data.dev[channel],
+					hsi_ll_data.ch[channel].tx.buffer,
+					size);
+
+	if (rc != 0) {
+		ret = -EPERM;
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+		printk("\nHSI_LL:hsi_write failed for channel %d with error %d. %s %d\n",
+			 channel, rc, __func__, __LINE__);
+#endif
+	}
+	else {
+		ret = -EBUSY;
+#if 1 
+		printk("\nHSI_LL: Transferring data over channel %d. %s %d\n",
+			 channel, __func__, __LINE__);
+#endif
+	}
+
+	hsi_ll_start_tx_timer(channel, 10);
+
+	return ret;
+
+}
 
 /*
  * hsi_ll_check_cp_state
@@ -1194,38 +1332,43 @@ static int hsi_ll_rd_ctrl_ch_th(void *data)
 */
 static int hsi_ll_check_cp_state(int channel)
 {
-	int rc = 0;
+	int rc = 0, ret = 0, count = 0;
 	unsigned int cp_state = HSI_LL_RX_STATE_UNDEF;
 
 	if( hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY) {
-#if 1 
+#if 1
 		printk("\nHSI_LL: Recovery state %s %d\n", __func__, __LINE__);
 #endif		
 		return -EACCES;
 	}
 
-	hsi_ll_data.ch[channel].tx.cp_state = HSI_LL_RX_STATE_UNDEF;
-	hsi_ll_data.ch[channel].tx.cp_info_complete = 0;
+	for(count = 0; count < HSI_CHECK_CP_INFO_MAX_RETRY; count++) {
+		hsi_ll_data.ch[channel].tx.cp_state = HSI_LL_RX_STATE_UNDEF;
+		hsi_ll_data.ch[channel].tx.cp_info_complete = 0;
 
-	rc = hsi_ll_send_command(HSI_LL_MSG_INFO_REQ,
-						channel,
-						NULL,
-						HSI_LL_PHY_ID_TX);
+		rc = hsi_ll_send_command(HSI_LL_MSG_INFO_REQ,
+							channel,
+							NULL,
+							HSI_LL_PHY_ID_TX);
 
-	if(rc != 0) {
+		if(rc != 0) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL: ch %d ret %d fail to send info req %s %d\n",
-			channel, rc, __func__, __LINE__);
+			printk("\nHSI_LL: ch %d ret %d fail to send info req %s %d\n",
+				channel, rc, __func__, __LINE__);
 #endif
-		return -EPERM;
+			return -EPERM;
+		}
+
+		rc = wait_event_interruptible_timeout(hsi_ll_data.ch[channel].tx.cp_info_wait,
+				hsi_ll_data.ch[channel].tx.cp_info_complete == 1, HSI_CHECK_CP_INFO_TIMEOUT);
+		
+		if(rc != 0) {
+			cp_state = hsi_ll_data.ch[channel].tx.cp_state;
+			break;
+		}
 	}
 
-	rc = wait_event_interruptible_timeout(hsi_ll_data.ch[channel].tx.cp_info_wait,
-					hsi_ll_data.ch[channel].tx.cp_info_complete == 1, HSI_CHECK_CP_INFO_TIMEOUT);
-	
-	cp_state = hsi_ll_data.ch[channel].tx.cp_state;
 	hsi_ll_data.ch[channel].tx.cp_state = HSI_LL_RX_STATE_UNDEF;
-
 	hsi_ll_data.ch[channel].tx.cp_info_complete = 0;
 
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
@@ -1242,19 +1385,27 @@ static int hsi_ll_check_cp_state(int channel)
 	if(hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_OPEN_CONN){
 #if 1 
 		printk("\nHSI_LL: ch %d Try again %s %d\n", channel, __func__, __LINE__);
-#endif		
+#endif
 		return -EBUSY;
 	}
 
-	if (rc == 0) { 
+	if (rc == 0) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL: ch %d Timeout fail to check %s %d\n", channel, __func__, __LINE__);
+		printk("\nHSI_LL: ch %d count %d Timeout fail to check %s %d\n", 
+			channel, count, __func__, __LINE__);
 #endif
+#if 1
 		return -EPERM;
+#else
+		ret =  hsi_ll_send_data(channel);
+
+		if(ret == -EBUSY)
+			return -EAGAIN;
+		else
+			return ret;
+#endif		
 	}
 	else {
-		int ret = 0;
-
 #if 1 
 		printk("\nHSI_LL: ch %d cp_state %d %s %d\n", channel, cp_state, __func__, __LINE__);
 #endif
@@ -1279,35 +1430,8 @@ static int hsi_ll_check_cp_state(int channel)
 				}
 				break;
 
-			case HSI_LL_RX_STATE_RX: {
-					unsigned int size = hsi_ll_data.ch[channel].tx.size;
-		
-					hsi_ll_stop_tx_timer(channel);
-					hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_TX;
-		
-					HSI_LL_GET_SIZE_IN_WORDS(size);
-		
-					rc = hsi_write(hsi_ll_data.dev[channel],
-									hsi_ll_data.ch[channel].tx.buffer,
-									size);
-
-					if (rc != 0) {
-						ret = -EPERM;
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
-						printk("\nHSI_LL:hsi_write failed for channel %d with error %d. %s %d\n",
-							 channel, rc, __func__, __LINE__);
-#endif
-					}
-					else {
-						ret = -EBUSY;
-#if 1
-						printk("\nHSI_LL: Transferring data over channel %d. %s %d\n",
-							 channel, __func__, __LINE__);
-#endif
-					}
-
-					hsi_ll_start_tx_timer(channel, 10);
-				}
+			case HSI_LL_RX_STATE_RX: 
+				ret = hsi_ll_send_data(channel);
 				break;
 
 			default:
@@ -1322,6 +1446,8 @@ static int hsi_ll_check_cp_state(int channel)
 	}
 }
 #endif
+
+
 int hsi_ll_check_channel(int channel)
 {
 #if 1 
@@ -1347,7 +1473,7 @@ int hsi_ll_check_channel(int channel)
 	}
 
 	else if(hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_OPEN_CONN){
-#if 1 		
+#if 1 /
 		printk("\nHSI_LL: ch %d Try again %s %d\n", channel, __func__, __LINE__);
 #endif
 		return -EBUSY;
@@ -1356,13 +1482,16 @@ int hsi_ll_check_channel(int channel)
 #if defined (MIPI_HSI_CHECK_CP_RX_INFO)
 		return hsi_ll_check_cp_state(channel);
 #else
-		return -EPERM; 
+		return -EPERM;
 #endif
 }
 
+
 void hsi_ll_reset_write_channel(int channel)
 {
+#if 0
 	int ret = 0;
+#endif
 
 #if 1 
 	printk("\nHSI_LL: channel 0. state %d %s %d\n", 
@@ -1374,7 +1503,8 @@ void hsi_ll_reset_write_channel(int channel)
 
 	if( hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
 		return;
-
+	
+#if 0
 	ret = hsi_write_cancel(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL]);
 
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
@@ -1393,11 +1523,13 @@ void hsi_ll_reset_write_channel(int channel)
 
 	hsi_ll_if.wr_complete_flag = 1;
 	wake_up_interruptible(&hsi_ll_if.wr_complete);
+#endif
 
 	hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_IDLE;
 	hsi_ll_data.ch[channel].tx.buffer = NULL;
 	hsi_ll_data.ch[channel].tx.size = 0;
 }
+
 
 int hsi_ll_write(int channel, unsigned char *buf, unsigned int size)
 {
@@ -1508,6 +1640,8 @@ int hsi_ll_open(int channel)
 
 #if defined (MIPI_HSI_CP_OPEN_CONN_ID_FOR_RETRY)
 	hsi_ll_data.ch[channel].rx.open_id = 16;  /* 0 ~ 15 */
+	hsi_ll_data.ch[channel].rx.open_size = -1;
+	hsi_ll_data.ch[channel].rx.retry_cnt = 0;
 #endif
 
 	if (0 > hsi_open(hsi_ll_data.dev[channel])) {
@@ -1521,11 +1655,13 @@ int hsi_ll_open(int channel)
 		hsi_ll_data.ch[channel].tx.channel = channel;
 		INIT_WORK(&hsi_ll_data.ch[channel].tx.retry_work, hsi_ll_retry_work);
 #endif
+
 #if defined (MIPI_HSI_CHECK_CP_RX_INFO)
 		init_waitqueue_head(&hsi_ll_data.ch[channel].tx.cp_info_wait);
 		hsi_ll_data.ch[channel].tx.cp_info_complete = 0;
 		hsi_ll_data.ch[channel].tx.cp_state = HSI_LL_RX_STATE_IDLE;
 #endif
+
 		hsi_ll_data.ch[channel].open = TRUE;
 	}
 
@@ -1593,13 +1729,19 @@ quit_close:
 	return HSI_LL_RESULT_SUCCESS;
 }
 
-static void hsi_ll_wakeup_cp(unsigned int val)
+static int hsi_ll_wakeup_cp(unsigned int val)
 {
-	int ret = -1;
+	int ret = 0;
 
 	mutex_lock(&hsi_ll_psv);
 
 	if (val == HSI_LL_WAKE_LINE_HIGH) {
+#if defined (HSI_LL_WAKE_LOCK)
+		if(wake_lock_active(&hsi_acwake_lock))
+			wake_unlock(&hsi_acwake_lock);
+		wake_lock(&hsi_acwake_lock);
+#endif
+
 		hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_HIGH;
 		ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
 						HSI_IOCTL_ACWAKE_UP,
@@ -1609,15 +1751,26 @@ static void hsi_ll_wakeup_cp(unsigned int val)
 #endif
 	} else {
 		if(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_DISABLE) {
-			printk("\nHSI_LL: PSV revoked%s %d\n",
+			printk("\nHSI_LL: PSV revoked by PSV_DISABLE %s %d\n",
 					 __func__, __LINE__);
 			ret = 0;
+		}else if (hsi_ll_check_idle(1) != 1) {
+			printk("\nHSI_LL: PSV revoked by hsi_ll_check_idle %s %d\n",
+					 __func__, __LINE__);
+			ret = -EAGAIN;
 		} else {
 			hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_LOW;
 			ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
 							HSI_IOCTL_ACWAKE_DOWN,
 							NULL);
 			hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
+
+#if defined (HSI_LL_WAKE_LOCK)
+			if(wake_lock_active(&hsi_acwake_lock))
+				wake_unlock(&hsi_acwake_lock);
+			wake_lock_timeout(&hsi_acwake_lock, HSI_LL_AC_WAKE_TIMEOUT);
+#endif
+			
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 			printk("HSI_LL:Setting AC wake line to LOW .\n");
 #endif
@@ -1631,7 +1784,7 @@ static void hsi_ll_wakeup_cp(unsigned int val)
 #endif
 	mutex_unlock(&hsi_ll_psv);
 
-	return;
+	return ret;
 }
 
 /*
@@ -1640,25 +1793,30 @@ static void hsi_ll_wakeup_cp(unsigned int val)
 #if defined (HSI_LL_ENABLE_PM)
 
 #define HSI_LL_PSV_TRY_MAX_COUNT 200
-#define HSI_LL_PSV_TRY_COUNT_DEBUG_PRINT 100
 
 static int hsi_ll_psv_th(void *data)
 {
+	int rc = 0;
 	unsigned int psv_done = 0;
 	unsigned int channel = 0;
 	unsigned int try_count = 0;
 
 	while(1) {
 
-		if((hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
-			||(try_count == HSI_LL_PSV_TRY_MAX_COUNT))
+		if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
 		{
-			wait_event_interruptible_timeout(hsi_ll_if.psv_event,
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+			printk("\nHSI_LL:PSV_Enable restart. lock HSI_LL_PSV_EVENT_PSV_RESTART\n");
+#endif
+			rc = wait_event_interruptible_timeout(hsi_ll_if.psv_event,
 						(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_RESTART)
 						, HSI_LL_PV_RESTART_CMD_Q_TIMEOUT);
 
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:PSV_Enable restart. HSI_LL_PSV_EVENT_PSV_RESTART\n");
+			if (rc == 0)
+				printk("\nHSI_LL:PSV_Enable restart. unlock HSI_LL_PSV_EVENT_PSV_RESTART by timeout\n");
+			else
+				printk("\nHSI_LL:PSV_Enable restart. unlock HSI_LL_PSV_EVENT_PSV_RESTART by command\n");
 #endif
 		}
 
@@ -1701,13 +1859,13 @@ static int hsi_ll_psv_th(void *data)
 			for(channel = 0; channel < HSI_LL_MAX_CHANNELS; channel++) {
 				if ((hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_IDLE) ||
 					(hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_IDLE)){
+					try_count++;
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-					if((try_count != 0) && (try_count % HSI_LL_PSV_TRY_COUNT_DEBUG_PRINT == 0)) {
+					if(try_count == HSI_LL_PSV_TRY_MAX_COUNT) {
 						printk("\nHSI_LL:PSV_Enable - Channel[%d] is busy with TX status %d and RX status %d and retry after a little sleep with try count %d th.\n",
 						channel, hsi_ll_data.ch[channel].tx.state, hsi_ll_data.ch[channel].rx.state, try_count);
 					}
 #endif
-					try_count++;
 					msleep_interruptible(HSI_LL_PV_THREAD_SLEEP_TIME);
 					break;
 				}
@@ -1720,17 +1878,26 @@ static int hsi_ll_psv_th(void *data)
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 					printk("\nHSI_LL: Requesting to set AC wake line to low.\n");
 #endif
-					hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_LOW);
-					psv_done = 1;
+					if(hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_LOW) == 0)
+						psv_done = 1;
+					else {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+						printk("\nHSI_LL: Retry to set AC wake line to low.\n");			
+#endif
+					}
 				}
 			}
 
+#if 0
 			if(try_count == HSI_LL_PSV_TRY_MAX_COUNT) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 				printk("\nHSI_LL:PSV_Enable Stop because of abnormal case of Modem. HSI_LL_PSV_TRY_MAX_COUNT\n");
 #endif
+
+				hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_LOW);
 				psv_done = 1;
 			}
+#endif
 			
 		} while(!psv_done);
 	}
@@ -2231,19 +2398,13 @@ static void hsi_ll_port_event_cb(
 {
 	switch(event) {
 	case HSI_EVENT_BREAK_DETECTED:
-#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
-		if((dev->n_ch == 0)&&(hsi_ll_data.state == HSI_LL_IF_STATE_READY)) {
-			ifx_schedule_cp_dump_or_reset();
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Break Event detected. start ifx_schedule_cp_dump_or_reset %s %d\n",
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+		printk("\nHSI_LL:Break Event detected. Nothing done %s %d\n",
 				  __func__, __LINE__);
 #endif
-		}
-		else {
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Break Event detected. Nothing done %s %d\n",
-					  __func__, __LINE__);
-#endif
+#if 1
+		if(dev->n_ch == 0) {
+			hsi_ll_reset(HSI_LL_RESET_BREAK);
 		}
 #endif
 		break;
@@ -2270,11 +2431,25 @@ static void hsi_ll_port_event_cb(
 		printk("\nHSI_LL:CA wakeup line UP detected.%s %d\n",
 				  __func__, __LINE__);
 #endif
+#if defined (HSI_LL_WAKE_LOCK)
+		if(dev->n_ch == 0) {
+			if(wake_lock_active(&hsi_cawake_lock))
+				wake_unlock(&hsi_cawake_lock);
+			wake_lock(&hsi_cawake_lock);
+		}
+#endif
 		break;
 	case HSI_EVENT_CAWAKE_DOWN:
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 		printk("\nHSI_LL:CA wakeup line DOWN detected.%s %d\n",
 				  __func__, __LINE__);
+#endif
+#if defined (HSI_LL_WAKE_LOCK)
+		if(dev->n_ch == 0) {
+			if(wake_lock_active(&hsi_cawake_lock))
+				wake_unlock(&hsi_cawake_lock);
+			wake_lock_timeout(&hsi_cawake_lock, HSI_LL_CA_WAKE_TIMEOUT);
+		}
 #endif
 		break;
 	case HSI_EVENT_HSR_DATAAVAILABLE:
@@ -2355,6 +2530,10 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 		}
 
 		hsi_ll_data.state = HSI_LL_IF_STATE_READY;
+#if defined (HSI_LL_WAKE_LOCK)
+		wake_lock_init(&hsi_acwake_lock, WAKE_LOCK_SUSPEND, "hsi-acwake-lock");
+		wake_lock_init(&hsi_cawake_lock, WAKE_LOCK_SUSPEND, "hsi-cawake-lock");
+#endif
 
 #if defined (HSI_LL_ENABLE_TIMERS)
 		if (HSI_LL_RESULT_SUCCESS != hsi_ll_timer_init()) {
@@ -2430,6 +2609,12 @@ int hsi_ll_shutdown(void)
 		kthread_stop(hsi_ll_if.rd_th);
 		kthread_stop(hsi_ll_if.wr_th);
 #if defined (HSI_LL_ENABLE_PM)
+
+#if defined (HSI_LL_WAKE_LOCK)
+		wake_lock_destroy(&hsi_acwake_lock);
+		wake_lock_destroy(&hsi_cawake_lock);
+#endif
+
 		kthread_stop(hsi_ll_if.psv_th);
 #endif
 #if defined (HSI_LL_ENABLE_TIMERS)
@@ -2458,7 +2643,7 @@ int hsi_ll_reset(int type)
 
 	hsi_ll_data.initialized = FALSE;
 
-	if(type != HSI_LL_RESET_IFX_COREDUMP) {		
+	if(type == HSI_LL_RESET_RECOVERY) {		
 #if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
 		printk("\nHSI_LL: DLP recovery hsi_ll_reset started.\n");
 #endif
@@ -2469,7 +2654,7 @@ int hsi_ll_reset(int type)
 #endif
 
 #if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
-		xmd_set_ifx_cp_dump();
+		xmd_set_ifx_cp_dump(type);
 #endif
 	}
 
@@ -2483,6 +2668,7 @@ int hsi_ll_reset(int type)
 		hsi_ll_data.ch[ch_i].open = FALSE;
 		hsi_write_cancel(hsi_ll_data.dev[ch_i]);
 		hsi_read_cancel(hsi_ll_data.dev[ch_i]);
+
 #if defined (MIPI_HSI_CHECK_CP_RX_INFO)
 		hsi_ll_data.ch[ch_i].tx.cp_info_complete = 1;
 		wake_up_interruptible(&hsi_ll_data.ch[ch_i].tx.cp_info_wait);
@@ -2537,6 +2723,8 @@ int hsi_ll_reset(int type)
 #endif
 #if defined (MIPI_HSI_CP_OPEN_CONN_ID_FOR_RETRY)
 		hsi_ll_data.ch[ch_i].rx.open_id = 16; /* 0 ~ 15 */
+		hsi_ll_data.ch[ch_i].rx.open_size = -1;
+		hsi_ll_data.ch[ch_i].rx.retry_cnt = 0;
 #endif
 	}
 #endif
@@ -2546,18 +2734,28 @@ int hsi_ll_reset(int type)
 #endif
 
 #if defined (HSI_LL_ENABLE_PM)
+
+#if defined (HSI_LL_WAKE_LOCK)
+	wake_unlock(&hsi_acwake_lock);
+	wake_unlock(&hsi_cawake_lock);
+#endif
+
+#if 0
+	hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_LOW);
+#else
 	hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
 
 	hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_LOW;
 #endif
+#endif
 
-	if(type != HSI_LL_RESET_IFX_COREDUMP)
+	if(type == HSI_LL_RESET_RECOVERY)
 	{
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 		printk("\nHSI_LL: Resetting HSI PHY Driver.\n");
 #endif
 		if(0 > hsi_ioctl(hsi_ll_data.dev[0], HSI_IOCTL_SW_RESET, NULL)) {
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
 			printk("HSI_LL: HSI PHY rest returned error.\n");
 #endif
 		}

@@ -380,6 +380,12 @@ static int hsi_char_ioctl(struct inode *inode, struct file *file,
 		if (copy_to_user((void __user *)arg, &state, sizeof(state)))
 			ret = -EFAULT;
 		break;
+	case CS_SET_WAKE_RX_3WIRES_MODE:
+		if (copy_from_user(&state, (void __user *)arg, sizeof(state)))
+			ret = -EFAULT;
+		else
+			if_hsi_set_wake_rx_3wires_mode(ch, state);
+		break;
 	case CS_GET_CAWAKELINE:
 		if_hsi_get_cawakeline(ch, &state);
 		if (copy_to_user((void __user *)arg, &state, sizeof(state)))
@@ -575,7 +581,6 @@ out_unregister_chrdev:
 	unregister_chrdev_region(hsi_char_dev, num_channels);
 out_hsi_exit:
 	if_hsi_exit();
-out:
 	return ret;
 }
 

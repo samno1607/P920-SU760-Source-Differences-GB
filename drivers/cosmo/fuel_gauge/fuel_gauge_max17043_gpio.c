@@ -1212,7 +1212,9 @@ static int max17043_probe(struct platform_device *pdev)
 	ret = enable_irq_wake(gpio_to_irq(max_dev->pdata->gpio_alert));
 	if (ret < 0) {
 		printk(KERN_DEBUG "[MAX17043] set GAUGE_INT to wakeup source failed.\n");
+#if 0		
 		goto err_request_wakeup_irq_failed;
+#endif
 	}
 
 	max_dev->vcell = 3360;

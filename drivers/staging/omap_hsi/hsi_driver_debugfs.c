@@ -32,8 +32,11 @@ static int hsi_debug_show(struct seq_file *m, void *p)
 {
 	struct hsi_dev *hsi_ctrl = m->private;
 	struct platform_device *pdev = to_platform_device(hsi_ctrl->dev);
+	int err;
 
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0)
+		return err;
 
 	seq_printf(m, "REVISION\t: 0x%08x\n",
 		   hsi_inl(hsi_ctrl->base, HSI_SYS_REVISION_REG));
@@ -59,14 +62,19 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 	int ch, fifo;
 	long buff_offset;
 	struct platform_device *pdev = to_platform_device(hsi_ctrl->dev);
+	int err;
 
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0)
+		return err;
 
 	if (hsi_port->cawake_gpio >= 0)
 		seq_printf(m, "CAWAKE\t\t: %d\n", hsi_get_cawake(hsi_port));
 
 	seq_printf(m, "WAKE\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_SYS_WAKE_REG(port)));
+	seq_printf(m, "SET_WAKE\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_SYS_SET_WAKE_REG(port)));
 	seq_printf(m, "MPU_ENABLE_IRQ%d\t: 0x%08x\n", hsi_port->n_irq,
 		   hsi_inl(base,
 			   HSI_SYS_MPU_ENABLE_REG(port, hsi_port->n_irq)));
@@ -83,18 +91,18 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 				   HSI_SYS_MPU_U_STATUS_REG(port,
 							    hsi_port->n_irq)));
 	}
+	seq_printf(m, "MPU_DMA_ENABLE_IRQ\t: 0x%08x\n",
+		   hsi_inl(base, HSI_SYS_GDD_MPU_IRQ_ENABLE_REG));
+	seq_printf(m, "MPU_DMA_STATUS_IRQ\t: 0x%08x\n",
+		   hsi_inl(base, HSI_SYS_GDD_MPU_IRQ_STATUS_REG));
 	/* HST */
 	seq_printf(m, "\nHST\n===\n");
+	seq_printf(m, "ID\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HST_ID_REG(port)));
 	seq_printf(m, "MODE\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HST_MODE_REG(port)));
 	seq_printf(m, "FRAMESIZE\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HST_FRAMESIZE_REG(port)));
-	seq_printf(m, "DIVISOR\t\t: 0x%08x\n",
-		   hsi_inl(base, HSI_HST_DIVISOR_REG(port)));
-	seq_printf(m, "CHANNELS\t: 0x%08x\n",
-		   hsi_inl(base, HSI_HST_CHANNELS_REG(port)));
-	seq_printf(m, "ARBMODE\t\t: 0x%08x\n",
-		   hsi_inl(base, HSI_HST_ARBMODE_REG(port)));
 	seq_printf(m, "TXSTATE\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HST_TXSTATE_REG(port)));
 	if (hsi_driver_device_is_hsi(pdev)) {
@@ -106,8 +114,14 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 		seq_printf(m, "BUFSTATE\t: 0x%08x\n",
 			   hsi_inl(base, HSI_HST_BUFSTATE_REG(port)));
 	}
+	seq_printf(m, "DIVISOR\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HST_DIVISOR_REG(port)));
 	seq_printf(m, "BREAK\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HST_BREAK_REG(port)));
+	seq_printf(m, "CHANNELS\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HST_CHANNELS_REG(port)));
+	seq_printf(m, "ARBMODE\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HST_ARBMODE_REG(port)));
 	for (ch = 0; ch < 8; ch++) {
 		buff_offset = hsi_hst_buffer_reg(hsi_ctrl, port, ch);
 		if (buff_offset >= 0)
@@ -123,14 +137,12 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 	}
 	/* HSR */
 	seq_printf(m, "\nHSR\n===\n");
+	seq_printf(m, "ID\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HSR_ID_REG(port)));
 	seq_printf(m, "MODE\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HSR_MODE_REG(port)));
 	seq_printf(m, "FRAMESIZE\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HSR_FRAMESIZE_REG(port)));
-	seq_printf(m, "CHANNELS\t: 0x%08x\n",
-		   hsi_inl(base, HSI_HSR_CHANNELS_REG(port)));
-	seq_printf(m, "COUNTERS\t: 0x%08x\n",
-		   hsi_inl(base, HSI_HSR_COUNTERS_REG(port)));
 	seq_printf(m, "RXSTATE\t\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HSR_RXSTATE_REG(port)));
 	if (hsi_driver_device_is_hsi(pdev)) {
@@ -148,6 +160,14 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 		   hsi_inl(base, HSI_HSR_ERROR_REG(port)));
 	seq_printf(m, "ERRORACK\t: 0x%08x\n",
 		   hsi_inl(base, HSI_HSR_ERRORACK_REG(port)));
+	seq_printf(m, "CHANNELS\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HSR_CHANNELS_REG(port)));
+	seq_printf(m, "OVERRUN\t\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HSR_OVERRUN_REG(port)));
+	seq_printf(m, "OVERRUNACK\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HSR_OVERRUNACK_REG(port)));
+	seq_printf(m, "COUNTERS\t: 0x%08x\n",
+		   hsi_inl(base, HSI_HSR_COUNTERS_REG(port)));
 	for (ch = 0; ch < 8; ch++) {
 		buff_offset = hsi_hsr_buffer_reg(hsi_ctrl, port, ch);
 		if (buff_offset >= 0)
@@ -160,9 +180,9 @@ static int hsi_debug_port_show(struct seq_file *m, void *p)
 				   hsi_inl(base,
 					   HSI_HSR_MAPPING_FIFO_REG(fifo)));
 		}
-		seq_printf(m, "DLL\t: 0x%08x\n",
+		seq_printf(m, "DLL\t\t: 0x%08x\n",
 			   hsi_inl(base, HSI_HSR_DLL_REG));
-		seq_printf(m, "DIVISOR\t: 0x%08x\n",
+		seq_printf(m, "DIVISOR\t\t: 0x%08x\n",
 			   hsi_inl(base, HSI_HSR_DIVISOR_REG(port)));
 	}
 
@@ -177,8 +197,11 @@ static int hsi_debug_gdd_show(struct seq_file *m, void *p)
 	void __iomem *base = hsi_ctrl->base;
 	int lch;
 	struct platform_device *pdev = to_platform_device(hsi_ctrl->dev);
+	int err;
 
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0)
+		return err;
 
 	seq_printf(m, "GDD_MPU_STATUS\t: 0x%08x\n",
 		   hsi_inl(base, HSI_SYS_GDD_MPU_IRQ_STATUS_REG));
@@ -255,14 +278,17 @@ static ssize_t hsi_port_counters_read(struct file *filep, char __user * buff,
 	unsigned int port = hsi_port->port_number;
 	struct platform_device *pdev = to_platform_device(hsi_ctrl->dev);
 	char str[50];
-	unsigned long reg;
+	unsigned int reg;
+	int err;
 
 	if (*offp > 0) {
 		ret = 0;
 		goto hsi_cnt_rd_bk;
 	}
 
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0)
+		return err;
 
 	reg = hsi_inl(base, HSI_HSR_COUNTERS_REG(port));
 
@@ -270,11 +296,11 @@ static ssize_t hsi_port_counters_read(struct file *filep, char __user * buff,
 
 	if (hsi_driver_device_is_hsi(pdev)) {
 		sprintf(str, "FT:%d, TB:%d, FB:%d\n",
-			(int)(reg & HSI_COUNTERS_FT_MASK) >>
+			(unsigned int)(reg & HSI_COUNTERS_FT_MASK) >>
 			HSI_COUNTERS_FT_OFFSET,
-			(int)(reg & HSI_COUNTERS_TB_MASK) >>
+			(unsigned int)(reg & HSI_COUNTERS_TB_MASK) >>
 			HSI_COUNTERS_TB_OFFSET,
-			(int)(reg & HSI_COUNTERS_FB_MASK) >>
+			(unsigned int)(reg & HSI_COUNTERS_FB_MASK) >>
 			HSI_COUNTERS_FB_OFFSET);
 	} else {
 		sprintf(str, "timeout:%d\n", (int)reg);
@@ -339,6 +365,7 @@ static ssize_t hsi_port_counters_write(struct file *filep,
 	char *words[MAXWORDS];
 	char tmpbuf[256];
 	unsigned long reg, ft, tb, fb;
+	int err;
 
 	if (count == 0)
 		return 0;
@@ -357,7 +384,9 @@ static ssize_t hsi_port_counters_write(struct file *filep,
 		return -EINVAL;
 	}
 
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0)
+		return err;
 
 	if (hsi_driver_device_is_hsi(pdev)) {
 		if (nwords != 3) {
@@ -366,12 +395,24 @@ static ssize_t hsi_port_counters_write(struct file *filep,
 			ret = -EINVAL;
 			goto hsi_cnt_w_bk1;
 		}
-		strict_strtoul(words[0], 0, &ft);
-		strict_strtoul(words[1], 0, &tb);
-		strict_strtoul(words[2], 0, &fb);
-		reg = ((ft << HSI_COUNTERS_FT_OFFSET & HSI_COUNTERS_FT_MASK) |
-		       (tb << HSI_COUNTERS_TB_OFFSET & HSI_COUNTERS_TB_MASK) |
-		       (fb << HSI_COUNTERS_FB_OFFSET & HSI_COUNTERS_FB_MASK));
+
+		if (strict_strtoul(words[0], 0, &ft) ||
+		    strict_strtoul(words[1], 0, &tb) ||
+		    strict_strtoul(words[2], 0, &fb)) {
+			dev_warn(hsi_ctrl->dev, "Not an unsigned long\n");
+			ret = -EINVAL;
+			goto hsi_cnt_w_bk1;
+		}
+
+		ft = clamp_val(ft, 0,
+				HSI_COUNTERS_FT_MASK >> HSI_COUNTERS_FT_OFFSET);
+		tb = clamp_val(tb, 0,
+				HSI_COUNTERS_TB_MASK >> HSI_COUNTERS_TB_OFFSET);
+		fb = clamp_val(fb, 0,
+				HSI_COUNTERS_FB_MASK >> HSI_COUNTERS_FB_OFFSET);
+		reg = (((ft << HSI_COUNTERS_FT_OFFSET) & HSI_COUNTERS_FT_MASK) |
+		       ((tb << HSI_COUNTERS_TB_OFFSET) & HSI_COUNTERS_TB_MASK) |
+		       ((fb << HSI_COUNTERS_FB_OFFSET) & HSI_COUNTERS_FB_MASK));
 	} else {
 		if (nwords != 1) {
 			dev_warn(hsi_ctrl->dev, "HSI counters write usage: "
@@ -380,8 +421,10 @@ static ssize_t hsi_port_counters_write(struct file *filep,
 			goto hsi_cnt_w_bk1;
 		}
 		strict_strtoul(words[0], 0, &reg);
+		reg = clamp_val(reg, 0,
+			(HSI_SSI_RX_TIMEOUT_MASK >> HSI_SSI_RX_TIMEOUT_OFFSET));
 	}
-	hsi_outl(reg, base, HSI_HSR_COUNTERS_REG(port));
+	hsi_outl((unsigned int)reg, base, HSI_HSR_COUNTERS_REG(port));
 	ret = count;
 	*offp += count;
 

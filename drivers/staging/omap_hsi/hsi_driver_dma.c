@@ -147,9 +147,9 @@ int hsi_driver_write_dma(struct hsi_channel *hsi_channel, u32 * data,
 		return -ENOMEM;
 	}
 
-	tmp = HSI_SRC_SINGLE_ACCESS0 |
+	tmp = HSI_SRC_BURST_4x32_BIT|
 	    HSI_SRC_MEMORY_PORT |
-	    HSI_DST_SINGLE_ACCESS0 |
+	    HSI_DST_BURST_4x32_BIT |
 	    HSI_DST_PERIPHERAL_PORT | HSI_DATA_TYPE_S32;
 	hsi_outw(tmp, base, HSI_GDD_CSDP_REG(lch));
 
@@ -245,9 +245,9 @@ int hsi_driver_read_dma(struct hsi_channel *hsi_channel, u32 * data,
 		return -ENOMEM;
 	}
 
-	tmp = HSI_DST_SINGLE_ACCESS0 |
+	tmp = HSI_DST_BURST_4x32_BIT |
 	    HSI_DST_MEMORY_PORT |
-	    HSI_SRC_SINGLE_ACCESS0 |
+	    HSI_SRC_BURST_4x32_BIT |
 	    HSI_SRC_PERIPHERAL_PORT | HSI_DATA_TYPE_S32;
 	hsi_outw(tmp, base, HSI_GDD_CSDP_REG(lch));
 
@@ -519,7 +519,7 @@ static void do_hsi_gdd_lch(struct hsi_dev *hsi_ctrl, unsigned int gdd_lch)
 								fifo);
 				if (fifo_words_avail)
 					dev_dbg(hsi_ctrl->dev,
-						"WARNING: FIFO %d not empty "
+						"FIFO %d not empty "
 						"after DMA copy, remaining "
 						"%d/%d frames\n",
 						fifo, fifo_words_avail,
@@ -585,12 +585,18 @@ static u32 hsi_process_dma_event(struct hsi_dev *hsi_ctrl)
 static void do_hsi_gdd_tasklet(unsigned long device)
 {
 	struct hsi_dev *hsi_ctrl = (struct hsi_dev *)device;
+	int err;
 
 	dev_dbg(hsi_ctrl->dev, "DMA Tasklet : clock_enabled=%d\n",
 		hsi_ctrl->clock_enabled);
 
 	spin_lock(&hsi_ctrl->lock);
-	hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
+	if (err < 0) {
+		spin_unlock(&hsi_ctrl->lock);
+		return;
+	}
+
 	hsi_ctrl->in_dma_tasklet = true;
 
 	hsi_process_dma_event(hsi_ctrl);

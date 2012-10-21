@@ -866,6 +866,9 @@ int omap2_clkdm_wakeup(struct clockdomain *clkdm)
 		v |= bits;
 		__raw_writel(v, clkdm->clkstctrl_reg);
 
+
+		pwrdm_clkdm_state_switch(clkdm);
+
 	} else {
 		BUG();
 	};

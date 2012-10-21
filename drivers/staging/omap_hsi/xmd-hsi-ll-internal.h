@@ -27,9 +27,9 @@
 #define HSI_LL_TIMER_Q_SIZE (3 * HSI_LL_MAX_CHANNELS)
 
 #if defined (HSI_LL_ENABLE_PM)
-#define HSI_LL_PV_READ_CMD_Q_TIMEOUT   80
-#define HSI_LL_PV_THREAD_SLEEP_TIME    20
-#define HSI_LL_PV_RESTART_CMD_Q_TIMEOUT   100 * HZ
+#define HSI_LL_PV_READ_CMD_Q_TIMEOUT   		1 * HZ	// 80
+#define HSI_LL_PV_THREAD_SLEEP_TIME    		50		// 20
+#define HSI_LL_PV_RESTART_CMD_Q_TIMEOUT   	100 * HZ
 #endif
 
 enum{
@@ -253,11 +253,13 @@ typedef struct hsi_ll_rx_ch {
 	unsigned int size;
 	unsigned int close_req;
 	struct timer_list timer_id;
-#if defined (MIPI_HSI_CP_OPEN_CONN_NAK_FOR_RETRY)
+if defined (MIPI_HSI_CP_OPEN_CONN_NAK_FOR_RETRY)
 	unsigned int nak_sent;
 #endif
 #if defined (MIPI_HSI_CP_OPEN_CONN_ID_FOR_RETRY)
-	unsigned int open_id; /* 0 ~ 15 */
+	unsigned int open_id; 
+	unsigned int open_size;
+	unsigned int retry_cnt; 
 #endif
 } ll_rx_ch;
 
@@ -423,7 +425,7 @@ static void hsi_ll_stop_channel(unsigned int channel);
 static int hsi_ll_rd_ctrl_ch_th(void *data);
 static int hsi_ll_wr_ctrl_ch_th(void *data);
 
-static void hsi_ll_wakeup_cp(unsigned int val);
+static int hsi_ll_wakeup_cp(unsigned int val);
 
 #if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
 static void hsi_ll_retry_work(struct work_struct *work);

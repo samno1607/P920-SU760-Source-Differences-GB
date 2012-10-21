@@ -90,6 +90,7 @@ static struct hsi_platform_data omap_hsi_platform_data = {
 	.device_enable = omap_device_enable,
 	.device_idle = omap_device_idle,
 	.device_shutdown = omap_device_shutdown,
+	.device_set_rate = omap_device_set_rate,
 	.wakeup_enable = omap_hsi_wakeup_enable,
 	.wakeup_disable = omap_hsi_wakeup_disable,
 	.wakeup_is_from_hsi = omap_hsi_is_io_wakeup_from_hsi,
@@ -294,14 +295,21 @@ static int omap_hsi_wakeup_disable(int hsi_port)
 *
 * @od - reference to the hsi omap_device.
 *
+* Return value : Passes the value returned by _omap_hwmod_idle
+*
 * Note : a "normal" .deactivate_func shall be omap_device_idle_hwmods()
 */
 static int hsi_idle_hwmod(struct omap_device *od)
 {
+	int err;
 	/* HSI omap_device only contain one od->hwmods[0], so no need to */
 	/* loop for all hwmods */
-	_omap_hwmod_idle(od->hwmods[0]);
-	return 0;
+	err = _omap_hwmod_idle(od->hwmods[0]);
+
+	if (err < 0)
+		dev_err(&od->pdev.dev, "Cannot idle HSI hwmod\n");
+
+	return err;
 }
 
 /**
@@ -311,14 +319,22 @@ static int hsi_idle_hwmod(struct omap_device *od)
 *
 * @od - reference to the hsi omap_device.
 *
+* Return value : Passes the value returned by _omap_hwmod_enable
+*
 * Note : a "normal" .activate_func shall be omap_device_enable_hwmods()
 */
 static int hsi_enable_hwmod(struct omap_device *od)
 {
+	int err;
+
 	/* HSI omap_device only contain one od->hwmods[0], so no need to */
 	/* loop for all hwmods */
-	_omap_hwmod_enable(od->hwmods[0]);
-	return 0;
+	err = _omap_hwmod_enable(od->hwmods[0]);
+
+	if (err < 0)
+		dev_err(&od->pdev.dev, "Cannot enable HSI hwmod\n");
+
+	return err;
 }
 
 /**

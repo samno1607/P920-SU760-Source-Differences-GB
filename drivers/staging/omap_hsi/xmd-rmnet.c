@@ -47,10 +47,14 @@
 /* #define RMNET_CRITICAL_DEBUG */
 #define RMNET_ERR
 
+
 #define RMNET_WD_TMO		5 * HZ
+
+
 #define RMNET_DATAT_SIZE   	ETH_DATA_LEN /* This value should be changed according to android MTU setting*/
 #define RMNET_MTU_SIZE		( ETH_HLEN + RMNET_DATAT_SIZE )
 #define MAX_PART_PKT_SIZE   2500
+
 
 /* #define RMNET_CHANGE_MTU */
 #define RMNET_ARP_ENABLE
@@ -59,6 +63,7 @@
 #define RMNET_MIN_MTU		64
 #define RMNET_MAX_MTU		4096
 #endif
+
 
 typedef enum {
 	RMNET_FULL_PACKET,
@@ -120,12 +125,13 @@ struct arp_resp {
 #endif
 
 #if defined (RMNET_ERR)
-#define RMNET_COL_SIZE 30
+#define RMNET_COL_SIZE 15
 #define RMNET_ERROR_STR_SIZE 20
 
 static unsigned int rmnet_cnt = 0;
 #endif
 
+	
 static void xmd_net_dump(const unsigned char *txt, const unsigned char *buf, int len)
 {
 	char dump_buf_str[(RMNET_COL_SIZE+1)*3] = {0,};
@@ -157,6 +163,7 @@ static void xmd_net_dump(const unsigned char *txt, const unsigned char *buf, int
 		rmnet_cnt++;
 	}
 }
+
 
 static int count_this_packet(void *_hdr, int len)
 {
@@ -389,7 +396,7 @@ static int xmd_trans_packet(
 	sz += ETH_HLEN; /* 14byte ethernet header should be added */
 
 #if defined (RMNET_CRITICAL_DEBUG)
-	printk("\nRMNET: %d<\n",sz);
+	printk("\nRMNET: %d<\n", sz);
 #endif
 
 	if ((type != RMNET_IPV4_VER) && (type != RMNET_IPV6_VER )
@@ -404,14 +411,16 @@ static int xmd_trans_packet(
 		return -EINVAL;
 	}
 
+
 #if defined (RMNET_CHANGE_MTU)
 	if (sz > dev->mtu)
 #else
 	if (sz > RMNET_MTU_SIZE)
 #endif
 	{
+
 #if defined (RMNET_ERR)
-		printk("\n%s (line %d) discarding pkt len (%d) version %d\n", __func__, __LINE__, sz, type);
+		printk("\n%s (line %d): discarding pkt len (%d) version %d\n", __func__, __LINE__, sz, type);
 #endif
 		p->stats.rx_errors++;
 		return -EINVAL;
@@ -420,7 +429,7 @@ static int xmd_trans_packet(
 		skb = dev_alloc_skb(sz + NET_IP_ALIGN);
 		if (skb == NULL) {
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) cannot allocate dev_alloc_skb type(%x) pkt len (%d) \n",
+			printk("\n%s (line %d): cannot allocate dev_alloc_skb type(%x) pkt len (%d) \n",
 				__func__, __LINE__, type, sz);
 #endif
 			p->stats.rx_dropped++;
@@ -430,9 +439,20 @@ static int xmd_trans_packet(
 			skb->dev = dev;
 			skb_reserve(skb, NET_IP_ALIGN);
 			ptr = skb_put(skb, sz);
+
+			if(ptr == NULL) {
+#if defined (RMNET_ERR)
+				printk("\n%s (line %d): skb_put fails\n",__func__, __LINE__);
+#endif
+				p->stats.rx_dropped++;
+				dev_kfree_skb (skb);
+				return -ENOMEM;
+			}
+			
 			wake_lock_timeout(&p->wake_lock, HZ / 2);
 
 			/* adding ethernet header */
+
 #if 0
 			{
 				char temp[] = {0xB6,0x91,0x24,0xa8,0x14,0x72,0xb6,0x91,0x24,0xa8,0x14,0x72,0x08,0x0};
@@ -480,6 +500,7 @@ static int xmd_trans_packet(
 			memcpy((void *)ptr, (void *)&p->eth_hdr, ETH_HLEN);
 #endif
 
+
 			memcpy(ptr + ETH_HLEN, buf, sz - ETH_HLEN);
 
 			skb->protocol = eth_type_trans(skb, dev);
@@ -501,11 +522,12 @@ static int xmd_trans_packet(
 static void rmnet_reset_pastpacket_info(int ch)
 {
 	if(ch >= MAX_SMD_NET ) {
-#if defined (RMNET_DEBUG)
+#if defined (RMNET_ERR)
 		printk("\nrmnet:Invalid rmnet channel number %d\n", ch);
 #endif
 		return;
-	}	
+	}
+
 	past_packet[ch].state = RMNET_FULL_PACKET;
 	memset(past_packet[ch].buf, 0 , MAX_PART_PKT_SIZE);
 	past_packet[ch].size = 0;
@@ -513,12 +535,14 @@ static void rmnet_reset_pastpacket_info(int ch)
 }
 
 /* Called in wq context */
+#define MAX_RMNET_REALIGN_COUNT 5
+
 static void xmd_net_notify(int chno)
 {
 	int i, rc = 0;
 	struct net_device *dev = NULL;
 	void *buf = NULL;
-	int tot_sz = 0;
+	int tot_sz = 0, realign_count = 0;
 	struct rmnet_private *p = NULL;
 	struct xmd_ch_info *info = NULL;
 
@@ -555,9 +579,10 @@ static void xmd_net_notify(int chno)
 	/* contains the full data read from hsi channel.*/
 	buf = xmd_ch_read(info->chno, &tot_sz);
 
-	if (!buf) {
+	if ((!buf)||(tot_sz == 0)){
 #if defined (RMNET_ERR)
-		printk("\n%s (line %d) No buf recvd from ch(%d)\n", __func__ ,__LINE__, info->chno);
+		printk("\n%s (line %d) No buf recvd from ch(%d) tot_sz(%d)\n",
+			__func__ ,__LINE__, info->chno, tot_sz);
 #endif
 		return;
 	}
@@ -630,7 +655,6 @@ static void xmd_net_notify(int chno)
 			xmd_net_dump("xmd_net_notify", past_packet[info->id].buf, sz);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
-			return;
 		}
 			
 #if defined (RMNET_DEBUG)
@@ -659,7 +683,7 @@ static void xmd_net_notify(int chno)
 		else
 		{
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) Invalid past version (%d)\n", __func__, __LINE__,
+			printk("\n%s (line %d): Invalid past version (%d)\n", __func__, __LINE__,
 				past_packet[info->id].type);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
@@ -675,7 +699,7 @@ static void xmd_net_notify(int chno)
 			/* copy whatever read if read size < packet size. */
 			memcpy(past_packet[info->id].buf + past_packet[info->id].size,buf,tot_sz);
 #if defined (RMNET_DEBUG)
-			printk("\n%s (line %d) Still partial header\n", __func__, __LINE__);
+			printk("\n%s (line %d): Still partial header\n", __func__, __LINE__);
 #endif
 			past_packet[info->id].size += tot_sz;
 			return;
@@ -691,7 +715,7 @@ static void xmd_net_notify(int chno)
 			sz = ntohs(((struct ipv6hdr*) ip_hdr)->payload_len) + sizeof(struct ipv6hdr);
 		} else {
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) Invalid past version (%d)\n", __func__, __LINE__,
+			printk("\n%s (line %d): Invalid past version (%d)\n", __func__, __LINE__,
 							past_packet[info->id].type);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
@@ -701,7 +725,7 @@ static void xmd_net_notify(int chno)
 
 		if((sz <= 0)||(sz > RMNET_DATAT_SIZE)) {
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) Invalid hdr len(%d)\n", __func__, __LINE__, sz);
+			printk("\n%s (line %d): Invalid hdr len(%d)\n", __func__, __LINE__, sz);
 			xmd_net_dump("xmd_net_notify", past_packet[info->id].buf, past_packet[info->id].size);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
@@ -717,7 +741,7 @@ static void xmd_net_notify(int chno)
 			/* copy whatever read if read size < packet size.*/
 			memcpy(past_packet[info->id].buf + past_packet[info->id].size,buf,tot_sz);
 #if defined (RMNET_DEBUG)
-			printk("\n%s (line %d) past size = %d, total size = %d\n",  __func__, __LINE__,
+			printk("\n%s (line %d): past size = %d, total size = %d\n",  __func__, __LINE__,
 						past_packet[info->id].size, tot_sz);
 #endif
 			past_packet[info->id].size += tot_sz;
@@ -729,12 +753,11 @@ static void xmd_net_notify(int chno)
 
 		if(rc != 0) {
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) xmd_trans_packet fail sz(%d) tot_sz(%d)\n",
+			printk("\n%s (line %d): xmd_trans_packet fail sz(%d) tot_sz(%d)\n",
 				__func__, __LINE__, sz, tot_sz);
 			xmd_net_dump("xmd_net_notify", past_packet[info->id].buf, sz);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
-			return;
 		}
 
 		buf = buf + copy_size;
@@ -745,7 +768,7 @@ static void xmd_net_notify(int chno)
 	default:
 	{
 #if defined (RMNET_ERR)
-		printk("\n%s (line %d) Invalid past state (%d)\n", __func__, __LINE__, 
+		printk("\n%s (line %d): Invalid past state (%d)\n", __func__, __LINE__, 
 				(int)past_packet[info->id].state);
 #endif
 		rmnet_reset_pastpacket_info(info->id);
@@ -775,9 +798,58 @@ static void xmd_net_notify(int chno)
 			hdr_size = sizeof(struct iphdr);
 		} else if (ver == RMNET_IPV6_VER) {
 			hdr_size = sizeof(struct ipv6hdr);
-		} else {
+		} else if(NULL != strnstr((char*)buf, "+PBREADY", 12)) {
+#if defined (RMNET_ERR)
+			char buf_str[RMNET_ERROR_STR_SIZE];
+			memset(buf_str, 0x00, RMNET_ERROR_STR_SIZE);
+			memcpy(buf_str, buf, min(RMNET_ERROR_STR_SIZE, tot_sz));
+			
+			printk("xmd_net_notify: Converted strings %s\n", buf_str);
+			printk("xmd_net_notify: Left packet size = %d, \n", tot_sz);
+			printk("xmd_net_notify: Modem slient reset, so down rmnet \n");
+#endif
+			rmnet_sync_down_for_recovery();
+			break;
+		}
+		else if ((NULL != strnstr((char*)buf, "ERROR", 9))||
+				(NULL != strnstr((char*)buf, "NO CARRIER", 14))) {
+#if defined (RMNET_ERR)
+				char buf_str[RMNET_ERROR_STR_SIZE];
+				memset(buf_str, 0x00, RMNET_ERROR_STR_SIZE);
+				memcpy(buf_str, buf, min(RMNET_ERROR_STR_SIZE, tot_sz));
 
-#if 1
+				printk("xmd_net_notify: Converted strings %s\n", buf_str);
+				printk("xmd_net_notify: Left packet size = %d, \n", tot_sz);
+#endif
+				break;
+		}
+		else {
+			if((realign_count < MAX_RMNET_REALIGN_COUNT) && (tot_sz > 1)) {
+#if defined (RMNET_ERR)
+				if(realign_count == 0) {
+					printk("\n%s (line %d) ch:%d Invalid version 0x%x\n", __func__, __LINE__, info->chno, ver);
+					xmd_net_dump("xmd_net_notify", buf, tot_sz);
+				}
+#endif
+
+				buf++; tot_sz--;
+				realign_count++;
+
+				rmnet_reset_pastpacket_info(info->id);
+				continue;
+			}
+			else {
+#if defined (RMNET_ERR)
+				printk("\n%s (line %d) ch:%d Invalid ver 0x%x realign_count(%d)\n", 
+					__func__, __LINE__, info->chno, ver, realign_count);
+#endif
+				break;
+			}
+		}
+		
+#if 0
+		else {
+
 			/***********************************************************************
 				1. Case of "+PBREADY" : RIL recovery is needed
 					Modem resets because of low battery without any modem's notification 
@@ -794,7 +866,7 @@ static void xmd_net_notify(int chno)
 				ifx_schedule_cp_dump_or_reset();
 #endif
 			}
-			
+
 			/**********************************************************************************
 				1. Case of "NO CARRIER"
 					PDP is disconnected and modem sends "NO CARRIER"
@@ -824,9 +896,10 @@ static void xmd_net_notify(int chno)
 				rmnet_reset_pastpacket_info(info->id);
 
 			}
-#endif
 			return;
 		}
+#endif
+
 
 		if (tot_sz < hdr_size) {
 			past_packet[info->id].state = RMNET_PARTIAL_HEADER;
@@ -854,12 +927,26 @@ static void xmd_net_notify(int chno)
 		}
 
 		if((data_sz <= 0)||(data_sz > RMNET_DATAT_SIZE)) {
+			if((realign_count < MAX_RMNET_REALIGN_COUNT) && (tot_sz > 1)) {
 #if defined (RMNET_ERR)
-			printk("\n%s (line %d) Invalid hdr len(%d)\n", __func__, __LINE__, data_sz);
-			xmd_net_dump("xmd_net_notify", buf, tot_sz);
+				if(realign_count == 0) {
+					printk("\n%s (line %d) Invalid hdr len(%d)\n", __func__, __LINE__, data_sz);
+					xmd_net_dump("xmd_net_notify", buf, tot_sz);
+				}
 #endif
-			rmnet_reset_pastpacket_info(info->id);
-			return;
+
+				buf++; tot_sz--;
+				realign_count++;
+
+				rmnet_reset_pastpacket_info(info->id);
+				continue;
+			}
+			else {
+#if defined (RMNET_ERR)
+				printk("\n%s (line %d) Invalid hdr len(%d) realign_count(%d)\n", __func__, __LINE__, data_sz, realign_count);
+#endif
+				break;
+			}
 		}
 
 #if defined (RMNET_DEBUG)
@@ -871,9 +958,12 @@ static void xmd_net_notify(int chno)
 			past_packet[info->id].size = tot_sz;
 			memcpy(past_packet[info->id].buf, buf, tot_sz);
 			past_packet[info->id].type = ver;
-#if defined (RMNET_DEBUG)
-			printk("\n%s (line %d) partial data packet copied locally, sz = %d\n",
-				__func__, __LINE__,	tot_sz);
+
+#if 1 
+			if(tot_sz < 10) {
+				printk("\n%s (line %d) partial data packet copied locally, sz = %d\n",
+					__func__, __LINE__,	tot_sz);
+			}
 #endif
 			return;
 		}
@@ -887,7 +977,6 @@ static void xmd_net_notify(int chno)
 			xmd_net_dump("xmd_net_notify", buf, data_sz);
 #endif
 			rmnet_reset_pastpacket_info(info->id);
-			return;
 		}
 		
 #if defined (RMNET_DEBUG)
@@ -896,6 +985,7 @@ static void xmd_net_notify(int chno)
 #endif
 		tot_sz = tot_sz - data_sz;
 		buf = buf + data_sz;
+
 #if defined (RMNET_DEBUG)
 		printk("xmd_net_notify: looping for another packet tot_sz = %d\n",
 				tot_sz);
@@ -903,6 +993,8 @@ static void xmd_net_notify(int chno)
 	}
 
 	past_packet[info->id].state = RMNET_FULL_PACKET;
+	past_packet[info->id].size = 0;
+	past_packet[info->id].type = 0;
 }
 
 static int rmnet_open(struct net_device *dev)
@@ -992,6 +1084,7 @@ void rmnet_sync_down_for_recovery(void)
 
 	rtnl_unlock();
 }
+
 static int rmnet_stop(struct net_device *dev)
 {
 	struct rmnet_private *p = netdev_priv(dev);
@@ -1222,8 +1315,9 @@ static void rmnet_set_multicast_list(struct net_device *dev)
 		return;
 	}
 
+#if defined (RMNET_DEBUG)
 	printk("rmnet_set_multicast_list ch %d \n", info->chno);
-
+#endif
 }
 
 static void rmnet_tx_timeout(struct net_device *dev)
@@ -1250,7 +1344,7 @@ static int rmnet_nd_change_mtu(struct net_device *dev, int new_mtu)
 
 	if (!p) {
 #if defined (RMNET_ERR)
-		printk("\n%s (line %d) No netdev_priv\n", __func__, __LINE__);
+		printk("\n%s (line %d): No netdev_priv\n", __func__, __LINE__);
 #endif
 		return -EINVAL;
 	}
@@ -1333,11 +1427,10 @@ static int __init rmnet_init(void)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	timeout_suspend_us = 0;
 #endif
-#endif
 
-#ifdef CONFIG_MSM_RMNET_DEBUG
 	rmnet_wq = create_workqueue("rmnet");
-#endif
+
+#endif 
 
 	for (n = 0; n < MAX_SMD_NET; n++) {
 		rmnet_reset_pastpacket_info(n);
@@ -1346,7 +1439,7 @@ static int __init rmnet_init(void)
 
 		if (!dev) {
 #if defined (RMNET_ERR)
-			printk("rmnet_init: alloc_netdev fail \n");
+			printk("n%s (line %d): alloc_netdev fail \n", __func__, __LINE__);
 #endif	
 			return -ENOMEM;
 		}
@@ -1354,11 +1447,12 @@ static int __init rmnet_init(void)
 #ifdef CONFIG_MSM_RMNET_DEBUG
 		d = &(dev->dev);
 #endif
+
 		p = netdev_priv(dev);
 
 		if (!p) {
 #if defined (RMNET_ERR)
-			printk("rmnet_init: No netdev_priv \n");
+			printk("n%s (line %d): No netdev_priv \n", __func__, __LINE__);
 #endif
 		}
 
@@ -1381,7 +1475,7 @@ static int __init rmnet_init(void)
 		ret = register_netdev(dev);
 		if (ret) {
 #if defined (RMNET_ERR)
-			printk("rmnet_init: register_netdev fail \n");
+			printk("n%s (line %d): register_netdev fail\n", __func__, __LINE__);
 #endif			
 			free_netdev(dev);
 			return ret;
@@ -1403,11 +1497,12 @@ static int __init rmnet_init(void)
 		/* Only care about rmnet0 for suspend/resume tiemout hooks. */
 		if (n == 0)
 			rmnet0 = d;
-#endif
-#endif
+#endif 
+#endif 
 	}
 
 	return 0;
 }
 
 module_init(rmnet_init);
+

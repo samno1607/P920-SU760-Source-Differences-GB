@@ -30,7 +30,6 @@
 #include <plat/smartreflex.h>
 #include <plat/voltage.h>
 #include <plat/prcm.h>
-/* Disable SPI codes in case of MIPI HSI */
 #if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 #include <plat/dma.h>
 //SPI ISSUE
@@ -135,6 +134,15 @@ void omap4_trigger_ioctrl(void)
 	/* Trigger WUCLKIN disable */
 	prm_rmw_mod_reg_bits(OMAP4430_WUCLK_CTRL_MASK, 0x0,
 		OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_IO_PMCTRL_OFFSET);
+
+#if 1
+	omap_test_timeout(
+		!(prm_read_mod_reg(OMAP4430_PRM_DEVICE_MOD,
+				OMAP4_PRM_IO_PMCTRL_OFFSET)
+			& OMAP4430_WUCLK_STATUS_MASK),
+		MAX_IOPAD_LATCH_TIME, i);
+#endif
+
 	return;
 }
 
@@ -247,7 +255,6 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 			omap2_gpio_prepare_for_idle(0);
 		}
 
-/* Disable SPI codes in case of MIPI HSI */
 #if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 		//SPI ISSUE : TI Patch 20110414 - DMA initialization before SPI intterrupt at WakeUp
 		if (omap4_device_off_read_next_state())
@@ -326,14 +333,12 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 			omap_uart_resume_idle(3);
 		}
 
-/* Disable SPI codes in case of MIPI HSI */
 #if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 		if (omap4_device_off_read_next_state())
 			omap2_dma_context_restore();
 		//SPI ISSUE
 #endif  
 
-		/* Enable SR for IVA and CORE */
 		omap_smartreflex_enable(vdd_iva);
 		omap_smartreflex_enable(vdd_core);
 	}
@@ -367,8 +372,10 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 		omap_writel(0x2, 0x4A009550);
 		omap_writel(0xD, 0x48020054);
 
+#ifdef CONFIG_OMAP_HSI_DEVICE
 		/* Modem HSI wakeup */
 		omap_hsi_io_wakeup_check();
+#endif
 
 		/* usbhs remote wakeup */
 		usbhs_wakeup();
@@ -497,7 +504,7 @@ static int omap4_pm_prepare(void)
 	twl_i2c_write_u8(0x0D, 0x01, 0x95);
 
 	// VMMC
-#if defined(CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED) || defined(CONFIG_MACH_LGE_MMC_ALWAYSON)	
+#if defined(CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED) || defined(CONFIG_MACH_LGE_MMC_ALWAYSON)
 	//removed
 #else
 	#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
@@ -509,7 +516,7 @@ static int omap4_pm_prepare(void)
 	twl_i2c_write_u8(0x0D, 0x21, 0x9A);
 	#endif
 
-#endif	//CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED		
+#endif	//CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED	
 
  	//Logan_Test - put MOD, CON into DEVOFF mode
 	twl_i2c_write_u8(0x0D, 0x06, 0x25);	
@@ -610,13 +617,11 @@ static void Cosmo_padconf_save()
 		pad_save(	0x4A1000BE	,	82	);	// FRONT_KEY_LED_EN
 		pad_save(	0x4A1000C0	,	83	);	// CHG_EN_SET
 		pad_save(	0x4A1000DE	,	98	);	// LCD_CP_EN
-		//pad_save(	0x4A1000E0	,	99	);	// CAM_SUBPM_EN	// for VGA HW Standby  /changseok.kim
-/* Disable SPI codes in case of MIPI HSI */
+		//pad_save(	0x4A1000E0	,	99	);	// CAM_SUBPM_EN	
 #if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 		pad_save(	0x4A100112	,	120	);	// IPC_MRDY
 #endif
 
-/* OMAP_SEND => MODEM_SEND */
 #if 1
 		pad_save(	0x4A100114	,	121	);	// MODEM_SEND
 #else
@@ -624,14 +629,14 @@ static void Cosmo_padconf_save()
 #endif
 
 		pad_save(	0x4A100120	,	127	);	// AUD_PWRON 
-		pad_save(	0x4A10013E	,	140	);	// GPS_LNA_SD 
+		pad_save(	0x4A10013E	,	140	);	// GPS_LNA_SD
 		pad_save(	0x4A100146	,	144	);	// 3D_LCD_EN
 		pad_save(	0x4A10016E	,	164	);	// RESET_PMU_N
 		pad_save(	0x4A100170	,	165	);	// USIF1_SW
 		pad_save(	0x4A100172	,	166	);	// BT_EN
 		pad_save(	0x4A100176	,	168	);	// WLAN_EN
 /*
-		pad_save(	0x4A100184	,	0	);	// GPS_POWER_ON 
+		pad_save(	0x4A100184	,	0	);	// GPS_POWER_ON
 		pad_save(	0x4A100186	,	1	);	// GPS_RESET_N
 		pad_save(	0x4A1001AE	,	11	);	// UART_SW1 
 		pad_save(	0x4A1001B0	,	12	);	// UART_SW2 
@@ -690,13 +695,19 @@ static int omap4_pm_suspend(void)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_PRCM);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_SYS_1N);
-/* Disable SPI codes in case of MIPI HSI */
-#if defined(CONFIG_OMAP_HSI)
+
+#ifdef CONFIG_MACH_LGE_COSMOPOLITAN
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO1);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO2);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO4);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO6);
+#endif
+
+#ifdef CONFIG_OMAP_HSI_DEVICE
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_P1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_DMA);
-#else /* CONFIG_SPI_IFX */
-	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO4);//TI leejanghan
 #endif
+
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_SYS_2N);
 	//kimyoungho.kim
 	struct irq_desc *desc = irq_to_desc(OMAP44XX_IRQ_SYS_1N);
