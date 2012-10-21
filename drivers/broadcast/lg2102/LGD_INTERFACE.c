@@ -395,6 +395,17 @@ LGD_UINT8 INTERFACE_SCAN(LGD_UINT8 ucI2CID, LGD_UINT32 ulFreq)
 	if(!LGD_ENSEMBLE_SCAN(ucI2CID, ulFreq)) return LGD_ERROR;
  	pstFicDb->ulRFFreq = ulFreq;
 	
+#if 0 // kjyim
+	for(nIndex = 0; nIndex < pstFicDb->ucSubChCnt; nIndex++){
+		switch(pstFicDb->aucTmID[nIndex])
+		{
+		case TMID_1 : pChInfo = &g_stDmbInfo.astSubChInfo[g_stDmbInfo.nSetCnt++];	break;
+		case TMID_0 : pChInfo = &g_stDabInfo.astSubChInfo[g_stDabInfo.nSetCnt++];	break;
+		default   : pChInfo = &g_stDataInfo.astSubChInfo[g_stDataInfo.nSetCnt++];	break;
+		}
+		LGD_UPDATE(pChInfo, pstFicDb, nIndex);
+	}
+#endif	
 	return LGD_SUCCESS;
 }
 
@@ -488,6 +499,7 @@ LGD_DOUBLE32 INTERFACE_GET_POSTBER(LGD_UINT8 ucI2CID)
 	return LGD_GET_POSTBER(ucI2CID);
 }
 
+/* LGE MC Add for TP Error count*/
 LGD_UINT16 INTERFACE_GET_TPERRCNT(LGD_UINT8 ucI2CID)
 {
 	return LGD_GET_TPERRCNT(ucI2CID);

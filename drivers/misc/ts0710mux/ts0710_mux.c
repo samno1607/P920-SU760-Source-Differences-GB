@@ -69,7 +69,9 @@
 #include <asm/bitops.h>
 #include <asm/mach-types.h>
 
+#if 1 //LGE_RIL_RECOVERY
 #include <linux/delay.h>		/* msleep() */
+#endif
 #ifdef LGE_KERNEL_MUX
 #include <linux/spinlock.h>
 #include <linux/semaphore.h>
@@ -86,6 +88,7 @@
 #include "ts0710_mux.h"
 
 
+#if 1 
 /*
 	macro : ENABLE_MUX_WAKE_LOCK
 	description : This macro enables wakelock if ts_ldisc_close function is called because of RILD exit
@@ -98,7 +101,7 @@
 struct wake_lock	 	s_wake_lock;
 //static unsigned int	s_wake_lock_flag;
 #endif
-
+#endif
 
 
 #define LOCK_T          spinlock_t
@@ -109,7 +112,6 @@ struct wake_lock	 	s_wake_lock;
 #define UNLOCK(_l)      spin_unlock_bh(&(_l))
 #define ATOMIC(_l,_f)   spin_lock_irqsave(&(_l),(_f))
 #define UNATOMIC(_l,_f) spin_unlock_irqrestore(&(_l),(_f))
-
 static int NR_MUXS;
 
 static struct tty_struct *ipc_tty = NULL;
@@ -203,11 +205,9 @@ struct spi_data_recived_struct {
     int size;
     int updated;
 };
-
 #define MAX_WAITING_FRAMES 400  /* should be more maximum sum of waiting frames count */
 static DECLARE_WAIT_QUEUE_HEAD(wq);
 static volatile short int frames_to_send_count[TS0710MAX_CHANNELS];
-
 
 struct spi_data_send_struct;
 struct spi_data_send_struct {
@@ -218,10 +218,8 @@ struct spi_data_send_struct {
 };
 
 
-
 //@@static spinlock_t frame_nodes_lock = SPIN_LOCK_UNLOCKED;
 static LOCK_T frame_nodes_lock = SPIN_LOCK_UNLOCKED;
-
 static struct spi_data_send_struct frame_node[MAX_WAITING_FRAMES];
 static struct spi_data_send_struct *frame_to_send[TS0710MAX_PRIORITY_NUMBER];
 static struct spi_data_recived_struct spi_data_recieved;
@@ -270,11 +268,13 @@ unsigned int mux_written_counter;
 static void dump_mux_rd_buffer(const unsigned char *buf, int count);
 #endif
 
-#if defined(LGE_VT_CALL_SESSION) || defined(VT_MUX12_DEBUG) 
+#if defined(LGE_VT_CALL_SESSION) || defined(VT_MUX12_DEBUG)
 bool mux_12_open = 0;
 #endif
 
+#if 1 //LGE_RIL_RECOVERY
 extern void ifx_pmu_reset(void);
+#endif
 
 static void nodes_init(void)
 {
@@ -293,6 +293,7 @@ static void nodes_init(void)
         frames_to_send_count[i] = 0;
     }
     UNLOCK(frame_nodes_lock);
+    //@@spin_unlock(&frame_nodes_lock);
 }
 
 static int node_put_to_send(u8 dlci, u8 *data, int size)
@@ -656,6 +657,7 @@ static void mux_send_uih(ts0710_con * ts0710, u8 cr, u8 type, u8 *data, int len)
 {
      u8 *send = kmalloc(len + 2, GFP_ATOMIC);
 
+//WBT #196219
      mcc_short_frame_head *head;
 
      if(send==NULL){
@@ -858,7 +860,7 @@ static inline void add_post_recv_queue(mux_recv_struct ** head,
 	*head = new_item;
 }
 
-#define MUX_CONTROL_BUG_FIX
+#define MUX_CONTROL_BUG_FIX //by eunae.kim 2010-01-07
 static void ts0710_flow_on(u8 dlci, ts0710_con * ts0710)
 {
 #if defined(MUX_CONTROL_BUG_FIX) 
@@ -1114,12 +1116,15 @@ void process_uih(ts0710_con * ts0710, char *data, int len, u8 dlci) {
         flow_control = 1;
      }
      tty->ldisc->ops->receive_buf(tty, uih_data_start, NULL, uih_len);
+/*20101224 flow control disable for dlc12 start - temporary hack*/
         if((dlci == 12) && (flow_control))
 	{
         	printk("TS07.10 DLC12 data may be lost on next recieves!\n");
 		return;
 	}
+/*20101224 flow control disable for dlc12 end*/
      if (flow_control)
+//     	ts0710_flow_off(tty, dlci, ts0710);
         tty_throttle(tty);
 }
 
@@ -1455,13 +1460,17 @@ static void mux_close(struct tty_struct *tty, struct file *filp)
 	dlci = line;
 	if (mux_tty[line] == 0)
 #ifdef LGE_KERNEL_MUX
-/*Workaround Infineon modem - DLS opened once will never be closed*/
+#if 1 
 		if(dlci==12)
 		{	//When VT close DLC 12 with flow off status, must send flow on status to CP
 			//TS0710_PRINTK("%s - close channel[%d]\n", __FUNCTION__, dlci);
 			ts0710_flow_on(dlci, &ts0710_connection);
 		}
 	//TS0710_PRINTK("%s - close channel[%d]\n", __FUNCTION__, dlci);	
+#endif
+#if 0 //not LGE_RIL_RECOVERY
+        return;
+#endif
 #else        
 		ts0710_close_channel(dlci);
 #endif    
@@ -1488,10 +1497,13 @@ static void mux_close(struct tty_struct *tty, struct file *filp)
 	}
 
 	tty_unthrottle(tty);
+//	ts0710_flow_on(dlci, ts0710);
+#if 1 //LGE_RIL_RECOVERY
         if(mux_table[line] != NULL) {
             tty_kref_put(mux_table[line]);
             mux_table[line] = NULL;
         }
+#endif
 
 	wake_up_interruptible(&tty->read_wait);
 	wake_up_interruptible(&tty->write_wait);
@@ -1559,7 +1571,12 @@ static void mux_unthrottle(struct tty_struct *tty)
 	recv_info = mux_recv_info[line];
 	dlci = line;
 
+//     if (recv_info->total) {
+//     	recv_info->post_unthrottle = 1;
+     	/* schedule_work(&post_recv_tqueue); */
+//     } else {
      	ts0710_flow_on(dlci, ts0710);
+//     }
 }
 
 static int mux_chars_in_buffer(struct tty_struct *tty)
@@ -1715,6 +1732,10 @@ static int mux_write(struct tty_struct *tty,
 
 	dlci = tty->index;
 
+	/*
+	 * FIXME: split big packets into small one
+	 * FIXME: support DATATAG
+	 * */
 #ifdef LGE_KERNEL_MUX
 /* To remove Motorola's modem specific*/
 
@@ -1807,9 +1828,7 @@ static int mux_write_room(struct tty_struct *tty)
 	retval = ts0710->dlci[dlci].mtu - 1;
 
 out:
-
 	//printk("\nTS0710:write_room retval %d \n",retval);
-
 	return retval;
 }
 
@@ -1860,9 +1879,11 @@ static int mux_open(struct tty_struct *tty, struct file *filp)
 		// TS0710_PRINTK("MUX: SPI driver is not available yet!\n");
      	return -ENODEV;
 	 }
+#if 1 // LGE_RIL_RECOVERY
     if(mux_tty[line] == 0) {
         mux_table[line] = tty_kref_get(tty);
     }
+#endif // LGE_RIL_RECOVERY
 
         mux_tty[line]++;
 	dlci = line;
@@ -1942,7 +1963,7 @@ static int mux_open(struct tty_struct *tty, struct file *filp)
 		}
 	}
 
-#if defined(LGE_VT_CALL_SESSION) || defined(VT_MUX12_DEBUG) 
+#if defined(LGE_VT_CALL_SESSION) || defined(VT_MUX12_DEBUG) /* baeyoung.park 2011-02-17 */
 	if(DLCI_VIDEO_TELEPHONY == dlci)	
 	{	
 		mux_12_open = 1;	
@@ -1954,10 +1975,12 @@ static int mux_open(struct tty_struct *tty, struct file *filp)
 
 	retval = 0;
 out:
+#if 1 // LGE_RIL_RECOVERY
     if(mux_tty[line] == 0) {
         tty_kref_put(mux_table[line]);
         mux_table[line] = NULL;
     }
+#endif // LGE_RIL_RECOVERY
      return retval;
 }
 
@@ -2136,6 +2159,7 @@ static int ts_ldisc_tx_looper(void *param)
 
     while(!time_to_stop){
         TS0710_LOG("CPU%d: frame_nodes_lock [waiting...]", smp_id);
+//        WAIT_UNLOCK(frame_nodes_lock);
         LOCK(frame_nodes_lock);
         TS0710_LOG("CPU%d: frame_nodes_lock [locked]", smp_id);
         data_size = 0;
@@ -2226,6 +2250,7 @@ static int ts_ldisc_open(struct tty_struct *tty)
 
 	disc_data = kzalloc(sizeof(struct mux_data), GFP_KERNEL);
 
+//WBT #196220
      if(disc_data==NULL){
        TS0710_PRINTK("ldisc_open fail : Memory Allocation fail\n");
        return -ENOMEM;
@@ -2257,9 +2282,7 @@ static int ts_ldisc_open(struct tty_struct *tty)
     spi_data_recieved.size = 0;
     spi_data_recieved.updated = 0;
     time_to_stop = 0;
-
      task = NULL;
-
     write_task = NULL;
     write_task = kthread_run(ts_ldisc_tx_looper,NULL,"%s","ts_ldisc_tx_looper");
     if(write_task == NULL)
@@ -2302,6 +2325,7 @@ static void ts_ldisc_close(struct tty_struct *tty)
     ipc_tty = 0;
 
 
+#if 1 //LGE_RIL_RECOVERY
 	{
 		ts0710_con *ts0710 = &ts0710_connection;
 		u8 i;
@@ -2334,12 +2358,15 @@ static void ts_ldisc_close(struct tty_struct *tty)
 
 		TS0710_PRINTK("%s - start recovery mode!!\n", __FUNCTION__);
 
-		ifx_pmu_reset();
+		ifx_pmu_reset();	//cheolgwak CP reset
 
-
-		msleep(1000);
+		//ts0710_upon_disconnect();
+		//TS0710_PRINTK("%s - wait 5 seconds until cp rebooting!!\n", __FUNCTION__);
+		//tty_ldisc_flush(tty);
+		msleep(1000);	//cheolgwak
 		TS0710_PRINTK("%s - end recovery mode!!\n", __FUNCTION__);
 	}
+#endif
     
 #if defined(LGE_VT_CALL_SESSION) || defined(VT_MUX12_DEBUG) 
         mux_12_open = 0;
@@ -2532,7 +2559,7 @@ static void __exit mux_exit(void)
 #endif	
 }
 
-
+/*  baeyoung.park 2011-02-17 */
 bool IsVideoTelephonyActivated(void)
 {
 #if defined(LGE_VT_CALL_SESSION) 

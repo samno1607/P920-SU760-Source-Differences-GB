@@ -78,6 +78,7 @@ extern int tunerbb_drv_fc8050_fic_cb(uint32 userdata, uint8 *data, int length);
 extern int tunerbb_drv_fc8050_msc_cb(uint32 userdata, uint8 subChId, uint8 *data, int length);
 
 extern void tdmb_fc8050_set_userstop(void);;
+// Added by somesoo 20100730 for removing green block effect
 extern void fc8050_isr_control(uint8 onoff);
 extern void fc8050_isr_interruptclear(void);
 
@@ -95,7 +96,7 @@ typedef enum	fc8050_service_type
 	FC8050_DMB = 2,
 	FC8050_VISUAL =3,
 	FC8050_DATA,
-	FC8050_ENSQUERY = 6,
+	FC8050_ENSQUERY = 6,	
 	FC8050_SERVICE_MAX
 } fc8050_service_type;
 
@@ -250,6 +251,7 @@ int tunerbb_drv_fc8050_fic_cb(uint32 userdata, uint8 *data, int length)
 
 	//printk("FC8050 fic data (0x%x,len : %d)\n", *data, length);	
 
+	// FC8000 관련 code인 send_fic_int_sig_isr2task() in mbs_dshmain.c를 빼다 보니, 현재는 polling 방식이나 향후 ISR방식으로 적용시 필요하므로 feature를 추가함
 #ifndef FEATURE_GET_FIC_POLLING
 	send_fic_int_sig_isr2task();
 #endif // FEATURE_GET_FIC_POLLING
@@ -301,7 +303,7 @@ int tunerbb_drv_fc8050_msc_cb(uint32 userdata, uint8 subChId, uint8 *data, int l
 	2010/05/31	MOBIT	prajuna		Removed test code
 	2010/06/09	MOBIT	prajuna		TDMB porting(KB3 Rev. A patch)
 	2010/07/15	MOBIT	prajuna		TDMB tuning for QSC
-	2010/07/16	MOBIT	somesoo		TDMB tuning for QSC with FCI
+	2010/07/16	MOBIT	somesoo		TDMB tuning for QSC with FCI 최규원 과장
 	2010/07/17	MOBIT	somesoo		TDMB porting(VG)
 	2010/08/19	MOBIT	prajuna		Code review
 	2010/09/10	MOBIT	prajuna		TDMB porting(Aloe)
@@ -310,6 +312,15 @@ int8	tunerbb_drv_fc8050_init(void)
 {
 	uint8 res;
 	/*test*/
+
+	// For SPI Interface Verification 
+	/*
+	uint16 i; 
+	uint32 wdata = 0; 
+	uint32 ldata = 0; 
+	uint32 data = 0;
+	uint32 temp = 0;
+	*/
 
 	/* Common Code */
 #if defined(STREAM_SLAVE_PARALLEL_UPLOAD)
@@ -342,6 +353,46 @@ int8	tunerbb_drv_fc8050_init(void)
 	}
 
 	res = BBM_TUNER_SELECT(0, FC8050_TUNER, BAND3_TYPE);
+
+#if 0      //fc8050 <-> Host(MSM) 간의 Interface TEST를 위한 code
+/* test */	
+	for(i=0;i<5000;i++)
+	{
+//		dog_kick();
+		BBM_WRITE(NULL, 0x05, i & 0xff);
+		BBM_READ(NULL, 0x05, &data);
+		if((i & 0xff) != data)
+			printk("FC8000 byte test (0x%x,0x%x)\n", i & 0xff, data);
+	}
+	for(i=0;i<5000;i++)
+	{
+		BBM_WORD_WRITE(NULL, 0x0210, i & 0xffff);
+		BBM_WORD_READ(NULL, 0x0210, &wdata);
+		if((i & 0xffff) != wdata)
+			printk("FC8000 word test (0x%x,0x%x)\n", i & 0xffff, wdata);
+	}
+	for(i=0;i<5000;i++)
+	{
+		BBM_LONG_WRITE(NULL, 0x0210, i & 0xffffffff);
+		BBM_LONG_READ(NULL, 0x0210, &ldata);
+		if((i & 0xffffffff) != ldata)
+			printk("FC8000 long test (0x%x,0x%x)\n", i & 0xffffffff, ldata);
+	}
+
+	data = 0;
+	
+	for(i=0;i<5000;i++)
+	{
+	  temp = i&0xff;
+		BBM_TUNER_WRITE(NULL, 0x12, 0x01, &temp, 0x01);
+		BBM_TUNER_READ(NULL, 0x12, 0x01, &data, 0x01);
+		if((i & 0xff) != data)
+			printk("FC8000 tuner test (0x%x,0x%x)\n", i & 0xff, data);
+	}
+	temp = 0x51;
+	BBM_TUNER_WRITE(NULL, 0x12, 0x01, &temp, 0x01 );	
+/* test */
+#endif
 
 	if(res)
 		return FC8050_RESULT_ERROR; 
@@ -556,6 +607,7 @@ int8 tunerbb_drv_fc8050_mulit_set_channel(int32 freq_num, uint8 subch_cnt, uint8
 
            <notice> The size of subch_cnt[ ] and op_mode[ ] is the maximum number being supported by FC8050
 --------------------------------------------------------------------------------------- */
+// Modified by somesoo 20100730 for removing green block effect
 int8	tunerbb_drv_fc8050_multi_set_channel(int32 freq_num, uint8 subch_cnt, uint8 subch_id[ ], uint8 op_mode[ ])
 {
 	int8 res = BBM_OK;
@@ -565,6 +617,7 @@ int8	tunerbb_drv_fc8050_multi_set_channel(int32 freq_num, uint8 subch_cnt, uint8
 	fc8050_service_type svcType = FC8050_SERVICE_MAX;
 	unsigned short mask;
 		
+	// Added by somesoo 20100730 for removing green block effect
 	fc8050_isr_control(0);
 	
 	for(i=0;i<subch_cnt;i++)
@@ -654,6 +707,7 @@ int8	tunerbb_drv_fc8050_multi_set_channel(int32 freq_num, uint8 subch_cnt, uint8
 	BBM_WORD_WRITE(NULL, BBM_BUF_ENABLE, mask);
 	tot_subch_cnt = subch_cnt;
 
+	// Added by somesoo 20100730 for removing green block effect
 	if(svcType != FC8050_ENSQUERY)
 		fc8050_isr_control(1);
 	
@@ -867,6 +921,8 @@ int8	tunerbb_drv_fc8050_process_multi_data(uint8 subch_cnt, uint8* input_buf, ui
 	
 	(*read_size) = 0;
 
+	// Modified by FCI 20100309 for DAB error fatal(TD10172)
+	// Modified by somesoo 20100831 for DAB error fatal(TD10172)
 	for(ch_cnt = 0; ch_cnt<tot_subch_cnt; ch_cnt++)
 	{
 		memcpy(&header, &input_buf[i], sizeof(FCI_HEADER_TYPE));
@@ -988,6 +1044,8 @@ int8	tunerbb_drv_fc8050_get_multi_data(uint8 subch_cnt, uint8* buf_ptr, uint32 b
 		return FC8050_RESULT_ERROR;
 	}
 
+	// Modified by FCI 20100309 for DAB error fatal(TD10172)
+	// Modified by somesoo 20100831 for DAB error fatal(TD10172)
 	for(ch_cnt = 0; ch_cnt<tot_subch_cnt; ch_cnt++)
 	{
 		memcpy(&header, &msc_multi_data[i], sizeof(FCI_HEADER_TYPE));
@@ -1104,6 +1162,8 @@ static uint32 tunerbb_drv_fc8050_get_viterbi_ber(void)	//msc_ber
 	}
 	else
 	{		
+		//ber = ((tbe / bper) * 100000);
+		//ber = (tbe * 100000) / bper;
 		if(tbe > 42949)
 		{
 			ber = ((tbe * 1000)/bper)*100;
@@ -1155,7 +1215,12 @@ static uint32 tunerbb_drv_fc8050_get_rs_ber(void)	//va_ber
 	}
 	else
 	{
+		#if (1)	//include corrected bit 
 		ber = esum;
+		#else	//not include
+		ber = 0;
+		#endif
+		
 		ber += rserror * 9;
 		ber /= (nframe + 1) * 204 * 8;
 		ber = ber * 100000;
@@ -1166,6 +1231,64 @@ static uint32 tunerbb_drv_fc8050_get_rs_ber(void)	//va_ber
 	return ber; 	
 
 }
+
+/*
+static fci_u8 ficBuffer[1024];
+extern int (*pFicCallback)(fci_u32 userdata, fci_u8 *data, int length);
+extern fci_u32 gFicUserData;
+
+void tunerbb_drv_fc8050_process_polling_data()
+{
+	HANDLE hDevice = NULL;
+	fci_u16      mfIntStatus = 0;
+	fci_u16      size;
+	int i;
+
+	BBM_WRITE(hDevice, BBM_COM_INT_ENABLE, 0x00);
+	BBM_WRITE(hDevice, BBM_COM_STATUS_ENABLE, 0x00);
+	
+	BBM_WORD_READ(hDevice, BBM_BUF_INT, 0x01ff);
+	BBM_WORD_READ(hDevice, BBM_BUF_ENABLE, 0x01ff);
+
+	for(i = 0 ; i < 200 ; i++)
+	{
+		BBM_WORD_READ(hDevice, BBM_BUF_STATUS, &mfIntStatus);
+		
+		if(mfIntStatus)
+			break;
+	}
+	
+	if(mfIntStatus == 0)
+	{
+		BBM_WORD_READ(hDevice, BBM_BUF_INT, 0x00ff);
+		BBM_WORD_READ(hDevice, BBM_BUF_ENABLE, 0x00ff);
+		BBM_WRITE(hDevice, BBM_COM_INT_ENABLE, ENABLE_INT_MASK);
+		BBM_WRITE(hDevice, BBM_COM_STATUS_ENABLE, ENABLE_INT_MASK);
+		return;
+	}
+
+	BBM_WORD_WRITE(hDevice, BBM_BUF_STATUS, mfIntStatus);
+	BBM_WORD_WRITE(hDevice, BBM_BUF_STATUS, 0x0000);
+
+	if(mfIntStatus & 0x0100) 
+	{
+		BBM_WORD_READ(hDevice, BBM_BUF_FIC_THR, &size);
+		size += 1;
+		if(size-1) 
+		{
+			BBM_DATA(hDevice, BBM_COM_FIC_DATA, &ficBuffer[0], size);
+
+			if(pFicCallback)
+			      (*pFicCallback)(gFicUserData, &ficBuffer[0], size);
+		}
+	}
+	BBM_WORD_READ(hDevice, BBM_BUF_INT, 0x00ff);
+	BBM_WORD_READ(hDevice, BBM_BUF_ENABLE, 0x00ff);
+	
+	BBM_WRITE(hDevice, BBM_COM_INT_ENABLE, ENABLE_INT_MASK);
+	BBM_WRITE(hDevice, BBM_COM_STATUS_ENABLE, ENABLE_INT_MASK);
+}
+*/
 
 static int8 tunerbb_drv_fc8050_check_overrun(uint8 op_mode)
 {

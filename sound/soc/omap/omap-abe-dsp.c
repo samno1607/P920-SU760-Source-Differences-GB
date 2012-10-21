@@ -38,6 +38,9 @@
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 #include <linux/dma-mapping.h>
+#ifdef CONFIG_HAS_EARLYSUSPEND
+#include <linux/earlysuspend.h>
+#endif
 
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
@@ -45,7 +48,11 @@
 #include <plat/omap-pm.h>
 #include <plat/powerdomain.h>
 #include <plat/prcm.h>
+
+#include <mach/omap4-common.h>
+
 #include "../../../arch/arm/mach-omap2/pm.h"
+#include "../../../arch/arm/mach-omap2/cm-regbits-44xx.h"
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -73,8 +80,12 @@
 	(ABE_NUM_MIXERS + ABE_NUM_MUXES + ABE_NUM_WIDGETS)
 #define ABE_WIDGET_START	(ABE_NUM_MIXERS + ABE_NUM_MUXES)
 #define ABE_WIDGET_END	(ABE_WIDGET_START + ABE_NUM_WIDGETS)
-#define ABE_BE_START		(ABE_WIDGET_START + 7)
-#define ABE_BE_END	(ABE_BE_START + 10)
+#define ABE_FE_START		ABE_WIDGET_START
+#define ABE_NUM_FE		10
+#define ABE_FE_END		(ABE_FE_START + ABE_NUM_FE)
+#define ABE_BE_START		ABE_FE_END
+#define ABE_NUM_BE		11
+#define ABE_BE_END		(ABE_BE_START + ABE_NUM_BE)
 #define ABE_MUX_BASE	ABE_NUM_MIXERS
 
 /* Uplink MUX path identifiers from ROUTE_UL */
@@ -139,6 +150,7 @@ struct abe_data {
 	int opp;
 
 	int fe_id;
+	int fe_active[ABE_NUM_FE];
 
 	unsigned int dl1_equ_profile;
 	unsigned int dl20_equ_profile;
@@ -160,6 +172,10 @@ struct abe_data {
 
 	struct snd_pcm_substream *psubs;
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	struct early_suspend early_suspend;
+#endif
+	int early_suspended;
 };
 
 static struct abe_data *abe;
@@ -197,8 +213,8 @@ static void abe_irq_pingpong_subroutine(void)
 		abe->first_irq = 0;
 	} else {
 		if (abe->psubs)
-	snd_pcm_period_elapsed(abe->psubs);
-}
+			snd_pcm_period_elapsed(abe->psubs);
+	}
 }
 
 static irqreturn_t abe_irq_handler(int irq, void *dev_id)
@@ -368,6 +384,38 @@ void abe_dsp_mcpdm_shutdown(void)
 	mutex_unlock(&abe->mutex);
 
 	return;
+}
+
+static int abe_fe_active_count(struct abe_data *abe)
+{
+	int i, count = 0;
+
+	for (i = 0; i < ABE_NUM_FE; i++)
+		count += abe->fe_active[i];
+
+	return count;
+}
+
+static int abe_fe_event(struct snd_soc_dapm_widget *w,
+			struct snd_kcontrol *kcontrol, int event)
+{
+	int index, active, ret = 0;
+
+	if ((w->reg < ABE_FE_START) || (w->reg >= ABE_FE_END))
+		return -EINVAL;
+
+	index = w->reg - ABE_FE_START;
+
+	if (SND_SOC_DAPM_EVENT_ON(event)) {
+		abe->fe_active[index]++;
+		active = abe_fe_active_count(abe);
+		if (!abe->early_suspended || (active > 1) || !abe->fe_active[6])
+			ret = dpll_cascading_blocker_hold(&abe->pdev->dev);
+	} else {
+		abe->fe_active[index]--;
+	}
+
+	return ret;
 }
 
 /*
@@ -696,7 +744,7 @@ static int volume_put_audul_mixer(struct snd_kcontrol *kcontrol,
 
 	pm_runtime_get_sync(&pdev->dev);
 	abe_write_mixer(MIXAUDUL, -12000 + (ucontrol->value.integer.value[0] * 100),
-				RAMP_5MS, mc->reg);
+				RAMP_0MS, mc->reg);
 	pm_runtime_put_sync(&pdev->dev);
 
 	return 1;
@@ -750,9 +798,9 @@ static int volume_put_amic(struct snd_kcontrol *kcontrol,
 
 	pm_runtime_get_sync(&pdev->dev);
 	abe_write_mixer(GAINS_AMIC, -12000 + (ucontrol->value.integer.value[0] * 100),
-				RAMP_1000MS, GAIN_LEFT_OFFSET);
+				RAMP_0MS, GAIN_LEFT_OFFSET);
 	abe_write_mixer(GAINS_AMIC, -12000 + (ucontrol->value.integer.value[0] * 100),
-				RAMP_1000MS, GAIN_RIGHT_OFFSET);
+				RAMP_0MS, GAIN_RIGHT_OFFSET);
 	pm_runtime_put_sync(&pdev->dev);
 
 	return 1;
@@ -919,6 +967,7 @@ static int volume_get_gain(struct snd_kcontrol *kcontrol,
 
 	return 0;
 }
+
 
 static int abe_get_equalizer(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
@@ -1344,104 +1393,124 @@ static const struct snd_kcontrol_new abe_controls[] = {
 static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 
 	/* Frontend AIFs */
-	SND_SOC_DAPM_AIF_IN("TONES_DL", "Tones Playback", 0,
-			ABE_WIDGET(0), ABE_OPP_25, 0),
-	SND_SOC_DAPM_AIF_IN("VX_DL", "Voice Playback", 0,
-			ABE_WIDGET(1), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("VX_UL", "Voice Capture", 0,
-			ABE_WIDGET(2), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN_E("TONES_DL", "Tones Playback", 0,
+			ABE_WIDGET(0), ABE_OPP_25, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_IN_E("VX_DL", "Voice Playback", 0,
+			ABE_WIDGET(1), ABE_OPP_50, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_OUT_E("VX_UL", "Voice Capture", 0,
+			ABE_WIDGET(2), ABE_OPP_50, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	/* the MM_UL mapping is intentional */
-	SND_SOC_DAPM_AIF_OUT("MM_UL1", "MultiMedia1 Capture", 0,
-			ABE_WIDGET(3), ABE_OPP_100, 0),
-	SND_SOC_DAPM_AIF_OUT("MM_UL2", "MultiMedia2 Capture", 0,
-			ABE_WIDGET(4), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("MM_DL", " MultiMedia1 Playback", 0,
-			ABE_WIDGET(5), ABE_OPP_25, 0),
-	SND_SOC_DAPM_AIF_IN("MM_DL_LP", " MultiMedia1 LP Playback", 0,
-			ABE_WIDGET(5), ABE_OPP_25, 0),
-	SND_SOC_DAPM_AIF_IN("VIB_DL", "Vibra Playback", 0,
-			ABE_WIDGET(6), ABE_OPP_100, 0),
-	SND_SOC_DAPM_AIF_IN("MODEM_DL", "MODEM Playback", 0,
-			ABE_WIDGET(7), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("MODEM_UL", "MODEM Capture", 0,
-			ABE_WIDGET(8), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_OUT_E("MM_UL1", "MultiMedia1 Capture", 0,
+			ABE_WIDGET(3), ABE_OPP_100, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_OUT_E("MM_UL2", "MultiMedia2 Capture", 0,
+			ABE_WIDGET(4), ABE_OPP_50, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_IN_E("MM_DL", " MultiMedia1 Playback", 0,
+			ABE_WIDGET(5), ABE_OPP_25, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_IN_E("MM_DL_LP", " MultiMedia1 LP Playback", 0,
+			ABE_WIDGET(6), ABE_OPP_25, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_IN_E("VIB_DL", "Vibra Playback", 0,
+			ABE_WIDGET(7), ABE_OPP_100, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_IN_E("MODEM_DL", "MODEM Playback", 0,
+			ABE_WIDGET(8), ABE_OPP_50, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_AIF_OUT_E("MODEM_UL", "MODEM Capture", 0,
+			ABE_WIDGET(9), ABE_OPP_50, 0,
+			abe_fe_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 
 	/* Backend DAIs  */
 	// FIXME: must match BE order in abe_dai.h
 	SND_SOC_DAPM_AIF_IN("PDM_UL1", "Analog Capture", 0,
-			ABE_WIDGET(9), ABE_OPP_50, 0),
+			ABE_WIDGET(10), ABE_OPP_50, 0),
 	SND_SOC_DAPM_AIF_OUT("PDM_DL1", "HS Playback", 0,
-			ABE_WIDGET(10), ABE_OPP_25, 0),
+			ABE_WIDGET(11), ABE_OPP_25, 0),
 	SND_SOC_DAPM_AIF_OUT("PDM_DL2", "HF Playback", 0,
-			ABE_WIDGET(11), ABE_OPP_100, 0),
-	SND_SOC_DAPM_AIF_OUT("PDM_VIB", "Vibra Playback", 0,
 			ABE_WIDGET(12), ABE_OPP_100, 0),
+	SND_SOC_DAPM_AIF_OUT("PDM_VIB", "Vibra Playback", 0,
+			ABE_WIDGET(13), ABE_OPP_100, 0),
 	SND_SOC_DAPM_AIF_IN("BT_VX_UL", "BT Capture", 0,
-			ABE_WIDGET(13), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("BT_VX_DL", "BT Playback", 0,
 			ABE_WIDGET(14), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("MM_EXT_UL", "FM Capture", 0,
+	SND_SOC_DAPM_AIF_OUT("BT_VX_DL", "BT Playback", 0,
 			ABE_WIDGET(15), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN("MM_EXT_UL", "FM Capture", 0,
+			ABE_WIDGET(16), ABE_OPP_50, 0),
 	SND_SOC_DAPM_AIF_OUT("MM_EXT_DL", "FM Playback", 0,
-			ABE_WIDGET(16), ABE_OPP_25, 0),
+			ABE_WIDGET(17), ABE_OPP_25, 0),
 	SND_SOC_DAPM_AIF_IN("DMIC0", "DMIC0 Capture", 0,
-			ABE_WIDGET(17), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("DMIC1", "DMIC1 Capture", 0,
 			ABE_WIDGET(18), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("DMIC2", "DMIC2 Capture", 0,
+	SND_SOC_DAPM_AIF_IN("DMIC1", "DMIC1 Capture", 0,
 			ABE_WIDGET(19), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN("DMIC2", "DMIC2 Capture", 0,
+			ABE_WIDGET(20), ABE_OPP_50, 0),
 
 	/* ROUTE_UL Capture Muxes */
 	SND_SOC_DAPM_MUX("MUX_UL00",
-			ABE_WIDGET(20), ABE_OPP_50, 0, &mm_ul00_control),
+			ABE_WIDGET(21), ABE_OPP_50, 0, &mm_ul00_control),
 	SND_SOC_DAPM_MUX("MUX_UL01",
-			ABE_WIDGET(21), ABE_OPP_50, 0, &mm_ul01_control),
+			ABE_WIDGET(22), ABE_OPP_50, 0, &mm_ul01_control),
 	SND_SOC_DAPM_MUX("MUX_UL02",
-			ABE_WIDGET(22), ABE_OPP_50, 0, &mm_ul02_control),
+			ABE_WIDGET(23), ABE_OPP_50, 0, &mm_ul02_control),
 	SND_SOC_DAPM_MUX("MUX_UL03",
-			ABE_WIDGET(23), ABE_OPP_50, 0, &mm_ul03_control),
+			ABE_WIDGET(24), ABE_OPP_50, 0, &mm_ul03_control),
 	SND_SOC_DAPM_MUX("MUX_UL04",
-			ABE_WIDGET(24), ABE_OPP_50, 0, &mm_ul04_control),
+			ABE_WIDGET(25), ABE_OPP_50, 0, &mm_ul04_control),
 	SND_SOC_DAPM_MUX("MUX_UL05",
-			ABE_WIDGET(25), ABE_OPP_50, 0, &mm_ul05_control),
+			ABE_WIDGET(26), ABE_OPP_50, 0, &mm_ul05_control),
 	SND_SOC_DAPM_MUX("MUX_UL06",
-			ABE_WIDGET(26), ABE_OPP_50, 0, &mm_ul06_control),
+			ABE_WIDGET(27), ABE_OPP_50, 0, &mm_ul06_control),
 	SND_SOC_DAPM_MUX("MUX_UL07",
-			ABE_WIDGET(27), ABE_OPP_50, 0, &mm_ul07_control),
+			ABE_WIDGET(28), ABE_OPP_50, 0, &mm_ul07_control),
 	SND_SOC_DAPM_MUX("MUX_UL10",
-			ABE_WIDGET(28), ABE_OPP_50, 0, &mm_ul10_control),
+			ABE_WIDGET(29), ABE_OPP_50, 0, &mm_ul10_control),
 	SND_SOC_DAPM_MUX("MUX_UL11",
-			ABE_WIDGET(29), ABE_OPP_50, 0, &mm_ul11_control),
+			ABE_WIDGET(30), ABE_OPP_50, 0, &mm_ul11_control),
 	SND_SOC_DAPM_MUX("MUX_VX0",
-			ABE_WIDGET(30), ABE_OPP_50, 0, &mm_vx0_control),
+			ABE_WIDGET(31), ABE_OPP_50, 0, &mm_vx0_control),
 	SND_SOC_DAPM_MUX("MUX_VX1",
-			ABE_WIDGET(31), ABE_OPP_50, 0, &mm_vx1_control),
+			ABE_WIDGET(32), ABE_OPP_50, 0, &mm_vx1_control),
 
 	/* DL1 & DL2 Playback Mixers */
 	SND_SOC_DAPM_MIXER("DL1 Mixer",
-			ABE_WIDGET(32), ABE_OPP_25, 0, dl1_mixer_controls,
+			ABE_WIDGET(33), ABE_OPP_25, 0, dl1_mixer_controls,
 			ARRAY_SIZE(dl1_mixer_controls)),
 	SND_SOC_DAPM_MIXER("DL2 Mixer",
-			ABE_WIDGET(33), ABE_OPP_100, 0, dl2_mixer_controls,
+			ABE_WIDGET(34), ABE_OPP_100, 0, dl2_mixer_controls,
 			ARRAY_SIZE(dl2_mixer_controls)),
 
 	/* DL1 Mixer Input volumes ?????*/
 	SND_SOC_DAPM_PGA("DL1 Media Volume",
-			ABE_WIDGET(34), 0, 0, NULL, 0),
+			ABE_WIDGET(35), 0, 0, NULL, 0),
 
 	/* AUDIO_UL_MIXER */
 	SND_SOC_DAPM_MIXER("Voice Capture Mixer",
-			ABE_WIDGET(35), ABE_OPP_50, 0, audio_ul_mixer_controls,
+			ABE_WIDGET(36), ABE_OPP_50, 0, audio_ul_mixer_controls,
 			ARRAY_SIZE(audio_ul_mixer_controls)),
 
 	/* VX_REC_MIXER */
 	SND_SOC_DAPM_MIXER("Capture Mixer",
-			ABE_WIDGET(36), ABE_OPP_50, 0, vx_rec_mixer_controls,
+			ABE_WIDGET(37), ABE_OPP_50, 0, vx_rec_mixer_controls,
 			ARRAY_SIZE(vx_rec_mixer_controls)),
 
 	/* SDT_MIXER */
 	SND_SOC_DAPM_MIXER("Sidetone Mixer",
-			ABE_WIDGET(37), ABE_OPP_25, 0, sdt_mixer_controls,
+			ABE_WIDGET(38), ABE_OPP_25, 0, sdt_mixer_controls,
 			ARRAY_SIZE(sdt_mixer_controls)),
 
 	/*
@@ -1451,15 +1520,15 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 
 	/* Virtual PDM_DL1 Switch */
 	SND_SOC_DAPM_MIXER("DL1 PDM",
-			ABE_WIDGET(38), ABE_OPP_25, 0, &pdm_dl1_switch_controls, 1),
+			ABE_WIDGET(39), ABE_OPP_25, 0, &pdm_dl1_switch_controls, 1),
 
 	/* Virtual BT_VX_DL Switch */
 	SND_SOC_DAPM_MIXER("DL1 BT_VX",
-			ABE_WIDGET(39), ABE_OPP_50, 0, &bt_vx_dl_switch_controls, 1),
+			ABE_WIDGET(40), ABE_OPP_50, 0, &bt_vx_dl_switch_controls, 1),
 
 	/* Virtual MM_EXT_DL Switch TODO: confrm OPP level here */
 	SND_SOC_DAPM_MIXER("DL1 MM_EXT",
-			ABE_WIDGET(40), ABE_OPP_50, 0, &mm_ext_dl_switch_controls, 1),
+			ABE_WIDGET(41), ABE_OPP_50, 0, &mm_ext_dl_switch_controls, 1),
 
 	/*
 	 * The Following three are virtual switches to select the input port
@@ -1468,11 +1537,11 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 
 	/* Virtual MM_EXT_UL Switch */
 	SND_SOC_DAPM_MIXER("AMIC_UL MM_EXT",
-			ABE_WIDGET(41), ABE_OPP_50, 0, &mm_ext_ul_switch_controls, 1),
+			ABE_WIDGET(42), ABE_OPP_50, 0, &mm_ext_ul_switch_controls, 1),
 
 	/* Virtual PDM_UL1 Switch */
 	SND_SOC_DAPM_MIXER("AMIC_UL PDM",
-			ABE_WIDGET(42), ABE_OPP_50, 0, &pdm_ul1_switch_controls, 1),
+			ABE_WIDGET(43), ABE_OPP_50, 0, &pdm_ul1_switch_controls, 1),
 
 	/* Virtual to join MM_EXT and PDM+UL1 switches */
 	SND_SOC_DAPM_MIXER("AMIC_UL", SND_SOC_NOPM, 0, 0, NULL, 0),
@@ -1798,29 +1867,29 @@ static int aess_set_opp_mode(void)
 		case 25:
 			abe_set_opp_processing(ABE_OPP25);
 			udelay(250);
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98000000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 			break;
 		case 50:
 		default:
 			abe_set_opp_processing(ABE_OPP50);
 			udelay(250);
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98000000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 			break;
 		}
 	} else if (abe->opp < opp) {
 		/* Increase OPP mode */
 		switch (opp) {
 		case 25:
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98000000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 			abe_set_opp_processing(ABE_OPP25);
 			break;
 		case 50:
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 98000000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 			abe_set_opp_processing(ABE_OPP50);
 			break;
 		case 100:
 		default:
-			omap_device_set_rate(&pdev->dev, &pdev->dev, 196000000);
+			omap_device_set_rate(&pdev->dev, &pdev->dev, 196608000);
 			abe_set_opp_processing(ABE_OPP100);
 			break;
 		}
@@ -1901,7 +1970,7 @@ static int aess_restore_context(struct abe_data *abe)
 	int loss_count = 0;
 
 	printk("*******RD: %s Enter \n", __func__);
-	omap_device_set_rate(&pdev->dev, &pdev->dev, 98000000);
+	omap_device_set_rate(&pdev->dev, &pdev->dev, 98304000);
 
 	if (pdata->get_context_loss_count)
 		loss_count = pdata->get_context_loss_count(&pdev->dev);
@@ -1955,7 +2024,7 @@ static int aess_restore_context(struct abe_data *abe)
 
 	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
 	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
-
+	
 	printk("*******RD: %s Exit \n", __func__);
 
 	return 0;
@@ -1983,6 +2052,7 @@ static int aess_open(struct snd_pcm_substream *substream)
 		aess_restore_context(abe);
 		aess_set_opp_mode();
 		abe_wakeup();
+		udelay(500);
 	}
 
 	switch (dai->id) {
@@ -1990,10 +2060,12 @@ static int aess_open(struct snd_pcm_substream *substream)
 	case ABE_FRONTEND_DAI_MEDIA_CAPTURE:
 	case ABE_FRONTEND_DAI_TONES:
 	{
+// FIXME : 20110328
 // In case of call or FM radio, CPU may be in "deep sleep" state.
 // In "deep sleep" state, volume key should be working.
 // omap_mux_enable_wakeup() api make kernel panic.(I don't know the reason.)
 // So, I write kpd_col0/1 and kpd_row0/1 register directly.
+#if 1
 		unsigned short val;
 		val = omap_readw(0x4a10017c);
 		val |= (1<<14);
@@ -2007,6 +2079,12 @@ static int aess_open(struct snd_pcm_substream *substream)
 		val = omap_readw(0x4a10018a);
 		val |= (1<<14);
 		omap_writew(val, 0x4a10018a);
+#else
+		omap_mux_enable_wakeup("kpd_col3.kpd_col0");
+		omap_mux_enable_wakeup("kpd_col4.kpd_col1");
+		omap_mux_enable_wakeup("kpd_row3.kpd_row0");
+		omap_mux_enable_wakeup("kpd_row4.kpd_row1");		
+#endif
 	}
 		break;
 	case ABE_FRONTEND_DAI_LP_MEDIA:
@@ -2124,10 +2202,12 @@ static int aess_close(struct snd_pcm_substream *substream)
 	case ABE_FRONTEND_DAI_MEDIA_CAPTURE:
 	case ABE_FRONTEND_DAI_TONES:
 	{
+// FIXME : 20110328
 // In case of call or FM radio, CPU may be in "deep sleep" state.
 // In "deep sleep" state, volume key should be working.
 // omap_mux_enable_wakeup() api make kernel panic.(I don't know the reason.)
 // So, I write kpd_col0/1 and kpd_row0/1 register directly.
+#if 1
 		unsigned short val;
 		val = omap_readw(0x4a10017c);
 		val &= ~(1<<14);
@@ -2141,6 +2221,12 @@ static int aess_close(struct snd_pcm_substream *substream)
 		val = omap_readw(0x4a10018a);
 		val &= ~(1<<14);
 		omap_writew(val, 0x4a10018a);
+#else
+		omap_mux_disable_wakeup("kpd_col3.kpd_col0");
+		omap_mux_disable_wakeup("kpd_col4.kpd_col1");
+		omap_mux_disable_wakeup("kpd_row3.kpd_row0");
+		omap_mux_disable_wakeup("kpd_row4.kpd_row1");		
+#endif
 	}
 		break;
 	}
@@ -2161,18 +2247,28 @@ static int aess_close(struct snd_pcm_substream *substream)
 static int aess_mmap(struct snd_pcm_substream *substream,
 	struct vm_area_struct *vma)
 {
-	int offset, size, err;
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_dai *dai = rtd->cpu_dai;
+	int offset, size, err = 0;
 
-	/* TODO: we may need to check for underrun. */
-	vma->vm_flags |= VM_IO | VM_RESERVED;
-	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-	size = vma->vm_end - vma->vm_start;
-	offset = vma->vm_pgoff << PAGE_SHIFT;
+	switch (dai->id) {
+	case ABE_FRONTEND_DAI_LP_MEDIA:
+		/* TODO: we may need to check for underrun. */
+		vma->vm_flags |= VM_IO | VM_RESERVED;
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+		size = vma->vm_end - vma->vm_start;
+		offset = vma->vm_pgoff << PAGE_SHIFT;
 
-	err = io_remap_pfn_range(vma, vma->vm_start,
-			(ABE_DMEM_BASE_ADDRESS_MPU +
-			ABE_DMEM_BASE_OFFSET_PING_PONG + offset) >> PAGE_SHIFT,
-			size, vma->vm_page_prot);
+		err = io_remap_pfn_range(vma, vma->vm_start,
+				(ABE_DMEM_BASE_ADDRESS_MPU +
+				ABE_DMEM_BASE_OFFSET_PING_PONG +
+				offset) >> PAGE_SHIFT,
+				size, vma->vm_page_prot);
+		break;
+
+	default:
+		break;
+	}
 
 	if (err)
 		return -EAGAIN;
@@ -2204,18 +2300,42 @@ static struct snd_pcm_ops omap_aess_pcm_ops = {
 	.mmap		= aess_mmap,
 };
 
-static int aess_stream_event(struct snd_soc_dapm_context *dapm)
+static int aess_stream_event(struct snd_soc_dapm_context *dapm, int event)
 {
 	/* TODO: do not use abe global structure to assign pdev */
 	struct platform_device *pdev = abe->pdev;
+	int active = abe_fe_active_count(abe);
+	int ret = 0;
 
-	if (abe->active) {
-		pm_runtime_get_sync(&pdev->dev);
-		aess_set_opp_mode();
-		pm_runtime_put_sync(&pdev->dev);
+	if (!abe->active)
+		return 0;
+
+	pm_runtime_get_sync(&pdev->dev);
+	aess_set_opp_mode();
+	pm_runtime_put_sync(&pdev->dev);
+
+	switch (event) {
+	case SND_SOC_DAPM_STREAM_START:
+		/*
+		 * enter dpll cascading when all conditions are met:
+		 * - system is in early suspend (screen is off)
+		 * - single stream is active and is LP (ping-pong)
+		 * - OPP is 50 or less (DL1 path only)
+		 */
+		if (abe->early_suspended && (active == 1) &&
+		    abe->fe_active[6] && (abe->opp <= 50))
+			ret = dpll_cascading_blocker_release(&pdev->dev);
+		else
+			ret = dpll_cascading_blocker_hold(&pdev->dev);
+		break;
+	case SND_SOC_DAPM_STREAM_STOP:
+		ret = dpll_cascading_blocker_hold(&pdev->dev);
+		break;
+	default:
+		break;
 	}
 
-	return 0;
+	return ret;
 }
 
 static struct snd_soc_platform_driver omap_aess_platform = {
@@ -2228,6 +2348,21 @@ static struct snd_soc_platform_driver omap_aess_platform = {
 };
 
 #if defined(CONFIG_PM)
+static int aess_suspend(struct device *dev)
+{
+	/*
+	 * ensure we're out of DPLL cascading to properly
+	 * enter into suspend state
+	 */
+	return dpll_cascading_blocker_hold(dev);
+}
+
+static int aess_resume(struct device *dev)
+{
+	/* block DPLL cascading till conditions are met */
+	return dpll_cascading_blocker_hold(dev);
+}
+
 static int omap_pm_abe_get_dev_context_loss_count(struct device *dev)
 {
 	int ret;
@@ -2249,7 +2384,66 @@ static int omap_pm_abe_get_dev_context_loss_count(struct device *dev)
 }
 
 #else
+#define aess_runtime_suspend   NULL
+#define aess_runtime_resume    NULL
 #define omap_pm_abe_get_dev_context_loss_count NULL
+#endif
+
+static const struct dev_pm_ops aess_pm_ops = {
+	.suspend	= aess_suspend,
+	.resume		= aess_resume,
+};
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void abe_early_suspend(struct early_suspend *handler)
+{
+#if 1
+	struct abe_data *abe = container_of(handler, struct abe_data,
+					    early_suspend);
+	int active = abe_fe_active_count(abe);
+	u32 mask;
+
+#if 0
+	/* Disable SD for MPU towards EMIF,L3_2 and L4CFG */
+	mask = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK | OMAP4430_L4CFG_STATDEP_MASK;
+
+	cm_rmw_mod_reg_bits(mask, 0, OMAP4430_CM1_MPU_MOD, OMAP4_CM_MPU_STATICDEP_OFFSET);
+#endif
+
+	/*
+	 * enter dpll cascading when all conditions are met:
+	 * - system is in early suspend (screen is off)
+	 * - single stream is active and is LP (ping-pong)
+	 * - OPP is 50 or less (DL1 path only)
+	 */
+	printk(KERN_ERR "abe_early_suspend\n");
+
+	if ((active == 1) && abe->fe_active[6] && (abe->opp <= 50))
+		dpll_cascading_blocker_release(&abe->pdev->dev);
+
+	abe->early_suspended = 1;
+#endif
+}
+
+static void abe_late_resume(struct early_suspend *handler)
+{
+	struct abe_data *abe = container_of(handler, struct abe_data,
+					    early_suspend);
+	u32 reg, mask;
+
+#if 0
+	/* Enable SD for MPU towards EMIF,L3_2 and L4CFG */
+	reg = 1 << OMAP4430_MEMIF_STATDEP_SHIFT | (1 << OMAP4430_L3_2_STATDEP_SHIFT) | (1 << OMAP4430_L4CFG_STATDEP_SHIFT);
+	mask = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_2_STATDEP_MASK | OMAP4430_L4CFG_STATDEP_MASK;
+    cm_rmw_mod_reg_bits(mask, reg, OMAP4430_CM1_MPU_MOD,
+        OMAP4_CM_MPU_STATICDEP_OFFSET);
+#endif
+
+	/* exit dpll cascading since screen will be turned on */
+	dpll_cascading_blocker_hold(&abe->pdev->dev);
+
+	abe->early_suspended = 0;
+}
 #endif
 
 static int __devinit abe_engine_probe(struct platform_device *pdev)
@@ -2297,16 +2491,28 @@ static int __devinit abe_engine_probe(struct platform_device *pdev)
 
 	abe->abe_pdata = pdata;
 	abe->pdev = pdev;
+	dpll_cascading_blocker_hold(&abe->pdev->dev);
 
 	mutex_init(&abe->mutex);
 	mutex_init(&abe->opp_mutex);
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	abe->early_suspend.level = EARLY_SUSPEND_LEVEL_DISABLE_FB;
+	abe->early_suspend.suspend = abe_early_suspend;
+	abe->early_suspend.resume = abe_late_resume;
+	register_early_suspend(&abe->early_suspend);
+#endif
+
 	ret = snd_soc_register_platform(&pdev->dev,
 			&omap_aess_platform);
-	if (ret == 0)
-		return 0;
+	if (ret)
+		goto err;
 
+	return 0;
 err:
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&abe->early_suspend);
+#endif
 	kfree(abe);
 	return ret;
 }
@@ -2315,6 +2521,9 @@ static int __devexit abe_engine_remove(struct platform_device *pdev)
 {
 	struct abe_data *priv = dev_get_drvdata(&pdev->dev);
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&abe->early_suspend);
+#endif
 	snd_soc_unregister_platform(&pdev->dev);
 	kfree(priv);
 	return 0;
@@ -2324,6 +2533,7 @@ static struct platform_driver omap_aess_driver = {
 	.driver = {
 		.name = "omap-aess-audio",
 		.owner = THIS_MODULE,
+		.pm = &aess_pm_ops,
 	},
 	.probe = abe_engine_probe,
 	.remove = __devexit_p(abe_engine_remove),

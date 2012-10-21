@@ -35,7 +35,6 @@
 #define FBIOGET_HWCINFO         0x4616
 #define FBIOPUT_MODEINFO        0x4617
 #define FBIOGET_DISPINFO        0x4618
-
 #define FBIOGET_SCREEN_DATA     0x4620 
 #define FBIO_WAITFORVSYNC	_IOW('F', 0x20, __u32)
 

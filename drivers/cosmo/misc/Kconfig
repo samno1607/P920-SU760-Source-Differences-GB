@@ -28,6 +28,16 @@ config BACKLIGHT_LM3528
 	  To compile this driver as a module, choose M here: the module will
 	  be called lm3528_bl.
 	  	
+config BACKLIGHT_LM3530
+    bool "Backlight Driver for LM3530"
+    depends on BACKLIGHT_CLASS_DEVICE
+    select SUBPMIC_LM3530
+    help
+        If you have a LCD backlight connected to the brightness output of
+        LM3530, say Y here to enable this driver.
+        To compile this driver as a module, choose M here: the module will
+        be called lm3528_bl.
+	  	
 config COSMO_CAMERAFLASH_LM3559
 	bool "flash driver for lm3559"
 	default y

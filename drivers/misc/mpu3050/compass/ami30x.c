@@ -24,7 +24,7 @@
  *
  *  @{
  *     @file   ami30x.c
- *     @brief  Magnetometer setup and handling methods for Aichi AMI304/AMI306
+ *     @brief  Magnetometer setup and handling methods for Aichi AMI304/AMI305
  *             compass.
 */
 
@@ -258,10 +258,11 @@ struct ext_slave_descr ami30x_descr = {
 	/*.resume           = */ ami30x_resume,
 	/*.read             = */ ami30x_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "ami30x",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_AMI30X,
-	/*.reg              = */ 0x10,
+	/*.reg              = */ 0x06,
 	/*.len              = */ 6,
 	/*.endian           = */ EXT_SLAVE_LITTLE_ENDIAN,
 	/*.range            = */ {5461, 3333}

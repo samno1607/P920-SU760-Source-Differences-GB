@@ -196,7 +196,9 @@ do_mpage_readpage(struct bio *bio, struct page *page, unsigned nr_pages,
 		last_block = last_block_in_file;
 	page_block = 0;
 
+	// WBT 20110314	[START]
 	memset(blocks, 0x0, sizeof(blocks));
+	// WBT 20110314	[END]
 
 	/*
 	 * Map blocks using the result from the previous get_blocks call first.
@@ -474,7 +476,9 @@ static int __mpage_writepage(struct page *page, struct writeback_control *wbc,
 	loff_t i_size = i_size_read(inode);
 	int ret = 0;
 
+	// WBT 20110314	[START]
 	memset(blocks, 0x0, sizeof(blocks));
+	// WBT 20110314	[END]
 
 	if (page_has_buffers(page)) {
 		struct buffer_head *head = page_buffers(page);

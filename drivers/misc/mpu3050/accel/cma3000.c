@@ -78,7 +78,10 @@ int cma3000_read(void *mlsl_handle,
 		 struct ext_slave_platform_data *pdata,
 		 unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 struct ext_slave_descr cma3000_descr = {

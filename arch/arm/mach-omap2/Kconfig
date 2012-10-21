@@ -82,9 +82,7 @@ config MACH_OMAP3EVM
 
 config WIFI_CONTROL_FUNC
         bool "Enable WiFi control function abstraction"
-
         depends on MACH_OMAP_4430SDP || MACH_LGE_COSMOPOLITAN
-
         select WIRELESS_EXT
         select WEXT_CORE
         select WEXT_PROC
@@ -323,6 +321,50 @@ config MACH_LGE_COSMO_DOMASTIC_REV_B
 	bool "Select LGE COSMOPOLITAN DOMASTIC_REV_B H/W Revision"
 	depends on MACH_LGE_COSMO_DOMASTIC
 endchoice
+
+
+config MACH_LGE_CX2
+	bool "LGE CX2 board"
+	depends on ARCH_OMAP4
+
+choice
+	prompt "Choose the LGE CX2 Board Revision"
+	depends on MACH_LGE_CX2
+	default MACH_LGE_CX2_REV_A
+	
+config MACH_LGE_CX2_EVB
+	bool "Select LGE CX2 EVB_H/W Revision"
+	depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_A
+	bool "Select LGE CX2 REV_A H/W Revision"
+	depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_B
+	bool "Select LGE CX2 REV_B H/W Revision"
+	depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_C
+	bool "Select LGE CX2 REV_C H/W Revision"
+	depends on MACH_LGE_CX2
+ 
+config MACH_LGE_CX2_REV_D
+	bool "Select LGE CX2 REV_D H/W Revision"
+	depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_E
+	bool "Select LGE CX2 REV_E H/W Revision"
+	depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_10
+    bool "Select LGE CX2 REV_10 H/W Revision"
+	    depends on MACH_LGE_CX2
+
+config MACH_LGE_CX2_REV_11
+    bool "Select LGE CX2 REV_11 H/W Revision"
+	depends on MACH_LGE_CX2
+endchoice
+
 
 config ERRATA_OMAP4_AXI2OCP
 	bool "OMAP 4430 axi2ocp errata workaround"

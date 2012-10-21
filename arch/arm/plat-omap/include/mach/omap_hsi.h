@@ -232,11 +232,12 @@
 #define HSI_HSR_ID_REG(port)		(HSI_HSR_BASE(port) + 0x0000)
 
 #define HSI_HSR_MODE_REG(port)		(HSI_HSR_BASE(port) + 0x0004)
-
 #define HSI_HSR_MODE_MODE_VAL_MASK	(3 << 0)	/* HSI only */
 #define HSI_HSR_MODE_FLOW_VAL_MASK	(3 << 2)	/* HSI only */
 #define HSI_HSR_MODE_WAKE_STATUS	(1 << 4)	/* HSI only */
+
 #define HSI_HSR_MODE_MODE_VAL_SLEEP	0xFFFFFFFC	/* HSI only */
+
 
 #define HSI_HSR_FRAMESIZE_REG(port)	(HSI_HSR_BASE(port) + 0x0008)
 
@@ -255,6 +256,11 @@
 #define HSI_HSR_ERROR_TBE		(1 << 4)	/* HSI only */
 #define HSI_HSR_ERROR_RME		(1 << 7)	/* HSI only */
 #define HSI_HSR_ERROR_TME		(1 << 11)	/* HSI only */
+#define HSI_HSR_ERROR_ALL		(HSI_HSR_ERROR_SIG |    \
+					 HSI_HSR_ERROR_FTE |    \
+					 HSI_HSR_ERROR_TBE |    \
+					 HSI_HSR_ERROR_RME |    \
+					 HSI_HSR_ERROR_TME)
 
 #define HSI_HSR_ERRORACK_REG(port)	(HSI_HSR_BASE(port) + 0x0024)
 
@@ -297,7 +303,7 @@
 			(HSI_HSR_BUFFER_CH_REG(2, (fifo) - 8)))
 
 #define HSI_HSR_SWAPBUF_BASE(port)	(HSI_HSR_BASE(port) + 0x00c0)
-#define HSI_HSR_SWAPBUF_CH_REG(port, channel)	(HSI_HSR_SWAPBUF_BASE +\
+#define HSI_HSR_SWAPBUF_CH_REG(port, channel)	(HSI_HSR_SWAPBUF_BASE(port) +\
 						((channel) * 4))
 
 /* Additional registers for HSI */
@@ -447,6 +453,11 @@
 				HSI_SYS_MPU_ENABLE_REG(port, irq) :	\
 				HSI_SYS_MPU_U_ENABLE_REG(port, irq))
 
+#define HSI_SYS_MPU_STATUS_CH_REG(port, irq, channel)			\
+				((channel < HSI_SSI_CHANNELS_MAX) ?	\
+				HSI_SYS_MPU_STATUS_REG(port, irq) :	\
+				HSI_SYS_MPU_U_STATUS_REG(port, irq))
+
 /**
  *	struct omap_ssi_config - SSI board configuration
  *	@num_ports: Number of ports in use
@@ -468,13 +479,16 @@ struct omap_hsi_board_config {
 extern int omap_hsi_config(struct omap_hsi_board_config *hsi_config);
 
 #ifdef CONFIG_OMAP_HSI
-extern int omap_hsi_prepare_suspend(void);
-extern int omap_hsi_prepare_idle(void);
-extern int omap_hsi_resume_idle(void);
+extern int omap_hsi_prepare_suspend(int hsi_port, bool dev_may_wakeup);
+extern int omap_hsi_io_wakeup_check(void);
+extern int omap_hsi_wakeup(int hsi_port);
+extern int omap_hsi_is_io_wakeup_from_hsi(int *hsi_port);
 #else
-inline int omap_hsi_prepare_suspend(void) { return -ENOSYS; }
-inline int omap_hsi_prepare_idle(void) { return -ENOSYS; }
-inline int omap_hsi_resume_idle(void) { return -ENOSYS; }
+inline int omap_hsi_prepare_suspend(int hsi_port,
+					bool dev_may_wakeup) { return -ENOSYS; }
+inline int omap_hsi_io_wakeup_check(void) { return -ENOSYS; }
+inline int omap_hsi_wakeup(int hsi_port) { return -ENOSYS; }
+inline int omap_hsi_is_io_wakeup_from_hsi(int *hsi_port) { return -ENOSYS; }
 #endif
 
 #endif /* __OMAP_HSI_H__ */

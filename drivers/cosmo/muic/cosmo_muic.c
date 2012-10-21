@@ -266,6 +266,9 @@ static void create_cosmo_muic_proc_file(void)
 	muic_int_stat_proc_file = create_proc_entry(MUIC_INT_STAT_PROC_FILE, 0666, NULL);
 	
 	if (muic_path_proc_file) {
+#if 0 // kernel 32
+		cosmo_muic_proc_file->owner = THIS_MODULE;
+#endif
 		muic_path_proc_file->proc_fops = &muic_path_ops;
 	} else
 		printk(KERN_INFO "[MUIC] Cosmo MUIC path proc file create failed!\n");
@@ -324,13 +327,11 @@ void muic_mdelay(u32 microsec)
 }
 EXPORT_SYMBOL(muic_mdelay);
 
-
 TYPE_MUIC_MODE get_muic_mode(void)
 {
 	return charging_mode;
 }
 EXPORT_SYMBOL(get_muic_mode);
-
 
 void set_muic_mode(u32 mode)
 {
@@ -356,10 +357,40 @@ void set_muic_mode(u32 mode)
 
 EXPORT_SYMBOL(set_muic_mode);
 
+#if 0 // this is for wait event which is not unsing just now. block it temporary..
+int get_muic_charger_detected(void)
+{
+	printk(KERN_WARNING "[MUIC] LGE: get_muic_charger_detected\n");
 
+#if 1
+	if (muic_chager_event ) {
+		muic_chager_event = 0;
+		return 1;
+	}
+#else
+	if (muic_charger_detected.counter) {
+		atomic_set(&muic_charger_detected,0);
+		return 1;
+	}
+#endif
+
+	return 0;
+}
+EXPORT_SYMBOL(get_muic_charger_detected);
+#endif
 
 void set_muic_charger_detected(void)
 {
+#if 0 // this is for wait event which is not unsing just now. block it temporary..
+	//extern wait_queue_head_t muic_event;
+
+	printk(KERN_WARNING "[MUIC] LGE: set_muic_charger_detected\n");
+
+	//atomic_set(&muic_charger_detected,1);
+	//wake_up_interruptible(&muic_event);
+	muic_chager_event = 1;
+	//wake_up(&muic_event);
+#endif
 	charger_fsm(CHARG_FSM_CAUSE_ANY);
 }
 EXPORT_SYMBOL(set_muic_charger_detected);
@@ -728,7 +759,6 @@ static s32 __init muic_probe(struct i2c_client *client, const struct i2c_device_
 			printk("[muic] You should add codes for new MUIC chip");
 	}
 
-	
 	set_muic_charger_detected();
 
 	/* Makes the interrupt on MUIC INT wake up OMAP which is in suspend mode */
@@ -775,12 +805,10 @@ static const struct i2c_device_id muic_ids[] = {
 	{/* end of list */},
 };
 
-
 int fota_ebl_download(void)
 {
    return 0;
 }
-
 
 static int __init muic_state(char *str)
 {
@@ -798,7 +826,6 @@ static int __init muic_state(char *str)
 	printk("[MUIC] muic_state = %d\n", retain_mode);
 	return 1;
 }
-
 __setup("muic=", muic_state);
 //__setup("muic_state=", muic_state);
 

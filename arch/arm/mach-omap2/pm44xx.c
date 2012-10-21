@@ -30,12 +30,14 @@
 #include <plat/smartreflex.h>
 #include <plat/voltage.h>
 #include <plat/prcm.h>
+/* Disable SPI codes in case of MIPI HSI */
+#if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 #include <plat/dma.h>
+//SPI ISSUE
+#endif
 #include <mach/omap4-common.h>
 #include <mach/omap4-wakeupgen.h>
-
 #include "mach/omap_hsi.h" 
-
 
 #include "prm.h"
 #include "pm.h"
@@ -57,9 +59,7 @@ struct power_state {
 static LIST_HEAD(pwrst_list);
 static struct powerdomain *mpu_pwrdm;
 
-
 static struct powerdomain *mpu_pwrdm, *cpu0_pwrdm, *cpu1_pwrdm;
-
 static struct powerdomain *core_pwrdm, *per_pwrdm;
 
 static struct voltagedomain *vdd_mpu, *vdd_iva, *vdd_core;
@@ -208,7 +208,8 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	pwrdm_clear_all_prev_pwrst(core_pwrdm);
 	pwrdm_clear_all_prev_pwrst(per_pwrdm);
 
-
+//	pwrdm_set_next_pwrst(core_pwrdm, PWRDM_POWER_RET);
+//	pwrdm_set_next_pwrst(mpu_pwrdm, PWRDM_POWER_RET);
 
 	cpu0_next_state = pwrdm_read_next_pwrst(cpu0_pwrdm);
 	per_next_state = pwrdm_read_next_pwrst(per_pwrdm);
@@ -238,17 +239,22 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 		omap_smartreflex_disable(vdd_iva);
 		omap_smartreflex_disable(vdd_core);
 
-	
-	 if (omap4_device_off_read_next_state()) {
-		omap_uart_prepare_idle(0);
-		omap_uart_prepare_idle(1);
-		omap_uart_prepare_idle(2);
-		omap_uart_prepare_idle(3);
-		omap2_gpio_prepare_for_idle(0);
-	}
+		if (omap4_device_off_read_next_state()) {
+			omap_uart_prepare_idle(0);
+			omap_uart_prepare_idle(1);
+			omap_uart_prepare_idle(2);
+			omap_uart_prepare_idle(3);
+			omap2_gpio_prepare_for_idle(0);
+		}
 
-  if (omap4_device_off_read_next_state())
-   omap2_dma_context_save();
+/* Disable SPI codes in case of MIPI HSI */
+#if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
+		//SPI ISSUE : TI Patch 20110414 - DMA initialization before SPI intterrupt at WakeUp
+		if (omap4_device_off_read_next_state())
+			omap2_dma_context_save();
+		//SPI ISSUE
+#endif
+
 		omap4_trigger_ioctrl();
 
 		if (!omap4_device_off_read_next_state()) {
@@ -268,6 +274,10 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	 * This call will be required for offmode support to save and restore
 	 * context in the idle path oddmode support only.
 	*/
+#if 0
+	if (core_next_state < PWRDM_POWER_ON)
+		musb_context_save_restore(disable_clk);
+#endif
 	if (omap4_device_off_read_next_state()) {
 		omap4_prcm_prepare_off();
 		/* Save the device context to SAR RAM */
@@ -291,6 +301,11 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	 * This call will be required for offmode support to save and restore
 	 * context in the idle path oddmode support only.
 	*/
+#if 0
+	if (core_next_state < PWRDM_POWER_ON)
+		musb_context_save_restore(enable_clk);
+
+#endif
 
 	if (core_next_state < PWRDM_POWER_ON) {
 		if (!omap4_device_off_read_next_state()) {
@@ -303,22 +318,20 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 			OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_VOLTCTRL_OFFSET);
 		}
 
+		if (omap4_device_off_read_next_state()){
+			omap2_gpio_resume_after_idle(0);
+			omap_uart_resume_idle(0);
+			omap_uart_resume_idle(1);
+			omap_uart_resume_idle(2);
+			omap_uart_resume_idle(3);
+		}
 
-
-	
-	 if (omap4_device_off_read_next_state()){
-		omap2_gpio_resume_after_idle(0);
-		omap_uart_resume_idle(0);
-		omap_uart_resume_idle(1);
-		omap_uart_resume_idle(2);
-		omap_uart_resume_idle(3);
-	}
-  if (omap4_device_off_read_next_state())
-   omap2_dma_context_restore();
-		
-		
-		omap_hsi_resume_idle();
-		
+/* Disable SPI codes in case of MIPI HSI */
+#if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
+		if (omap4_device_off_read_next_state())
+			omap2_dma_context_restore();
+		//SPI ISSUE
+#endif  
 
 		/* Enable SR for IVA and CORE */
 		omap_smartreflex_enable(vdd_iva);
@@ -354,6 +367,9 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 		omap_writel(0x2, 0x4A009550);
 		omap_writel(0xD, 0x48020054);
 
+		/* Modem HSI wakeup */
+		omap_hsi_io_wakeup_check();
+
 		/* usbhs remote wakeup */
 		usbhs_wakeup();
 		omap4_trigger_ioctrl();
@@ -367,6 +383,99 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static omap4_mux_nc_setting(void)
+{
+	omap_writew(0x0108, 0x4a100050);
+	omap_writew(0x0108, 0x4a100052);
+	omap_writew(0x0108, 0x4a100054);
+	omap_writew(0x0108, 0x4a100056);
+	omap_writew(0x0108, 0x4a100058);
+	omap_writew(0x0108, 0x4a10005a);
+	omap_writew(0x0108, 0x4a10005c);
+	omap_writew(0x0108, 0x4a10005e);
+
+	omap_writew(0x010f, 0x4a100068);
+	omap_writew(0x010f, 0x4a10006a);
+	omap_writew(0x010f, 0x4a10006c);
+	omap_writew(0x010f, 0x4a10006e);
+	omap_writew(0x010f, 0x4a100070);
+	omap_writew(0x010f, 0x4a100072);
+	omap_writew(0x0000, 0x4a100074);
+
+	omap_writew(0x010f, 0x4a10007a);
+	omap_writew(0x010f, 0x4a10007c);
+
+	omap_writew(0x0000, 0x4a100080);
+
+	omap_writew(0x0000, 0x4a100086);
+
+	omap_writew(0x0108, 0x4a10008a);
+	omap_writew(0x010f, 0x4a10008c);
+	omap_writew(0x010f, 0x4a10008e);
+	omap_writew(0x010f, 0x4a100090);
+	omap_writew(0x010f, 0x4a100092);
+	omap_writew(0x010f, 0x4a100094);
+
+	omap_writew(0x010f, 0x4a1000bc);
+
+	/* connected with infenion, but not used. */
+#if 0
+	omap_writew(0x010f, 0x4a1000c2);
+	omap_writew(0x010f, 0x4a1000c4);
+	omap_writew(0x010f, 0x4a1000c6);
+	omap_writew(0x010f, 0x4a1000c8);
+	omap_writew(0x010f, 0x4a1000ca);
+	omap_writew(0x010f, 0x4a1000cc);
+	omap_writew(0x010f, 0x4a1000ce);
+	omap_writew(0x010f, 0x4a1000d0);
+#endif
+	omap_writew(0x010f, 0x4a31e048);
+
+	omap_writew(0x010f, 0x4a1000ee);
+	omap_writew(0x010f, 0x4a1000f0);
+	omap_writew(0x010f, 0x4a1000f2);
+	omap_writew(0x010f, 0x4a1000f4);
+
+	omap_writew(0x010f, 0x4a10013c);
+	omap_writew(0x010f, 0x4a100142);
+
+	omap_writew(0x010f, 0x4a10015a);
+	omap_writew(0x010f, 0x4a100160);
+	omap_writew(0x010f, 0x4a100162);
+	omap_writew(0x010f, 0x4a100164);
+	omap_writew(0x010f, 0x4a100166);
+	omap_writew(0x010f, 0x4a100168);
+	omap_writew(0x010f, 0x4a10016a);
+	omap_writew(0x010f, 0x4a10016c);
+
+	omap_writew(0x010f, 0x4a100178);
+	omap_writew(0x010f, 0x4a10017a);
+
+	omap_writew(0x010f, 0x4a100180);
+	omap_writew(0x010f, 0x4a100182);
+
+	omap_writew(0x010f, 0x4a10018c);
+	omap_writew(0x010f, 0x4a10018e);
+	omap_writew(0x010f, 0x4a100190);
+	omap_writew(0x010f, 0x4a100192);
+
+	omap_writew(0x010f, 0x4a10019c);
+
+	omap_writew(0x0000, 0x4a31e05C);
+
+	omap_writew(0x010f, 0x4a1001a2);
+
+	omap_writew(0x010f, 0x4a1001a8);
+
+	omap_writew(0x010f, 0x4a1001ac);
+
+	omap_writew(0x010f, 0x4a1001b2);
+
+	omap_writew(0x010f, 0x4a1001c2);
+
+}
+
+
 #ifdef CONFIG_SUSPEND
 extern int twl_i2c_write_u8(unsigned char mod_no, unsigned char value, unsigned char reg);
 static int omap4_pm_prepare(void)
@@ -378,6 +487,7 @@ static int omap4_pm_prepare(void)
 	//MISC2
 	twl_i2c_write_u8(0x0D, 0x00, 0xE5);
 
+#if 1
 	//OFF VCXIO  100uA
 	twl_i2c_write_u8(0x0D, 0x01, 0x90);
 	twl_i2c_write_u8(0x0D, 0x01, 0x91);
@@ -399,16 +509,17 @@ static int omap4_pm_prepare(void)
 	twl_i2c_write_u8(0x0D, 0x21, 0x9A);
 	#endif
 
-#endif	
+#endif	//CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED		
 
  	//Logan_Test - put MOD, CON into DEVOFF mode
 	twl_i2c_write_u8(0x0D, 0x06, 0x25);	
+#endif
 
 	return 0;
 }
 
+//KIMCS TEST
 /* Revert the defines after the GPIO glitch errata is applied */
-
 #define OMAP4_GPIO_DATAOUT		0x013c
 #define OMAP4_GPIO_OE			0x0134
 
@@ -499,9 +610,19 @@ static void Cosmo_padconf_save()
 		pad_save(	0x4A1000BE	,	82	);	// FRONT_KEY_LED_EN
 		pad_save(	0x4A1000C0	,	83	);	// CHG_EN_SET
 		pad_save(	0x4A1000DE	,	98	);	// LCD_CP_EN
-		//pad_save(	0x4A1000E0	,	99	);	// CAM_SUBPM_EN	
+		//pad_save(	0x4A1000E0	,	99	);	// CAM_SUBPM_EN	// for VGA HW Standby  /changseok.kim
+/* Disable SPI codes in case of MIPI HSI */
+#if !defined(CONFIG_OMAP_HSI) /* CONFIG_SPI_IFX */
 		pad_save(	0x4A100112	,	120	);	// IPC_MRDY
+#endif
+
+/* OMAP_SEND => MODEM_SEND */
+#if 1
+		pad_save(	0x4A100114	,	121	);	// MODEM_SEND
+#else
 		pad_save(	0x4A100116	,	122	);	// OMAP_SEND
+#endif
+
 		pad_save(	0x4A100120	,	127	);	// AUD_PWRON 
 		pad_save(	0x4A10013E	,	140	);	// GPS_LNA_SD 
 		pad_save(	0x4A100146	,	144	);	// 3D_LCD_EN
@@ -509,12 +630,24 @@ static void Cosmo_padconf_save()
 		pad_save(	0x4A100170	,	165	);	// USIF1_SW
 		pad_save(	0x4A100172	,	166	);	// BT_EN
 		pad_save(	0x4A100176	,	168	);	// WLAN_EN
+/*
+		pad_save(	0x4A100184	,	0	);	// GPS_POWER_ON 
+		pad_save(	0x4A100186	,	1	);	// GPS_RESET_N
+		pad_save(	0x4A1001AE	,	11	);	// UART_SW1 
+		pad_save(	0x4A1001B0	,	12	);	// UART_SW2 
+  		pad_save(	0x4A1001B4	,	14	);	// TOUCH_RESET
+		pad_save(	0x4A1001B6	,	15	);	// SECONDARY_5M_RESET_N
+		pad_save(	0x4A1001C4	,	22	); 	// VT_CAM_PWND
+		pad_save(	0x4A1001C6	,	23	);	// VT_CAM_RESET
+		pad_save(	0x4A1001C8	,	24	);	// PRIMARY_5M_RESET_N
+		pad_save(	0x4A1001CA	,	25	);	// VIBE_EN
+  		pad_save(	0x4A1001CE	,	27	);	// LCD_EN
+*/
 		pad_save(	0x4A1001D2	,	190	);	// 3D_LCD_BANK_SEL
 		pad_save(	0x4A1001D4	,	191	);	// FLASH_EN
 	}	
 
 }
-
 
 int offmode_enter=0;
 
@@ -525,9 +658,6 @@ static int omap4_pm_suspend(void)
 	struct power_state *pwrst;
 	int state;
 	u32 cpu_id = 0;
-	
-	u32 cpu1_state;
-	
 	u16 uart2_cts_config, uart_sysc_config;
 
 	uart2_cts_config = omap_readw(0x4A100118);
@@ -536,7 +666,6 @@ static int omap4_pm_suspend(void)
 	omap_writel(uart_sysc_config | 0x00000004, 0x4806C054); // set uart2_wakeup_enable
 	
 
-	
 	Cosmo_padconf_save();
 	omap_writel(0x00000009,0x4A307508);
 	
@@ -552,7 +681,7 @@ static int omap4_pm_suspend(void)
 
 	/*
 	 * Clear all wakeup sources and keep
-	 * only Debug UART, Keypad, HSI and GPT1 interrupt
+	 * only Debug UART, Keypad, HSI(CAWAKE+DMA) and GPT1 interrupt
 	 * as a wakeup event from MPU/Device OFF
 	 */
 	omap4_wakeupgen_clear_all(cpu_id);
@@ -561,18 +690,19 @@ static int omap4_pm_suspend(void)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_PRCM);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_SYS_1N);
-
+/* Disable SPI codes in case of MIPI HSI */
 #if defined(CONFIG_OMAP_HSI)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_P1);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_DMA);
+#else /* CONFIG_SPI_IFX */
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO4);//TI leejanghan
 #endif
-
-	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPIO4);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_SYS_2N);
+	//kimyoungho.kim
 	struct irq_desc *desc = irq_to_desc(OMAP44XX_IRQ_SYS_1N);
 	desc->chip->unmask(OMAP44XX_IRQ_SYS_1N);
 
-
-	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_UART2); // WAKEUP from BT(UART2)
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_UART2); // WAKEUP from BT(UART2)	//dennis.oh 2011-02-10 bt sleep 
 
 #ifdef CONFIG_ENABLE_L3_ERRORS
 	/* Allow the L3 errors to be logged */
@@ -610,14 +740,19 @@ static int omap4_pm_suspend(void)
 	}
 
 	omap_uart_prepare_suspend();
-	
-	omap_hsi_prepare_suspend(); 
-	
 
 	offmode_enter=1;
 	/* Enable Device OFF */
 	if (enable_off_mode)
 		omap4_device_off_set_state(1);
+//	omap4_mux_nc_setting();
+//	omap4_gpio_normal_setting();
+//	set_mux_offmode();
+
+	//kibum.lee
+//	omap_writel(0x7,0x4A306910);                         //RM_MPU_M3_RSTCTRL                                // reset
+//	omap_writel(0x0,0x4A008920);                         //CM_MPU_M3_MPU_M3_CLKCTRL
+//	omap_writel(0x1,0x4A008900);                         // CM_MPU_M3_CLKSTCTRL                  // SW_SLEEP
 
 
 	omap4_enter_sleep(0, PWRDM_POWER_OFF);
@@ -626,6 +761,9 @@ static int omap4_pm_suspend(void)
 	if (enable_off_mode)
 		omap4_device_off_set_state(0);
 
+//	omap4_gpio_normal_setting();
+
+	//kibum.lee
 	printk("count=%d, pre_mpu_m3_clkctrl=0x%x, CM_MPU_M3_MPU_M3_CLKCTRL: 0x%x\n", mpu_m3_clkctrl_count, mpu_m3_clkctrl, omap_readl(0x4A008920));
 	mpu_m3_clkctrl_count=0;
            
@@ -663,10 +801,9 @@ restore:
 	 */
 	omap4_wakeupgen_set_all(cpu_id);
 
-	omap_writew(uart2_cts_config, 0x4A100118); // restore uart2_cts
-	omap_writel(uart_sysc_config, 0x4806C054); // restore uart2_wakeup_enable
+	omap_writew(uart2_cts_config, 0x4A100118); // restore uart2_cts				//dennis.oh 2011-02-10 bt sleep 
+	omap_writel(uart_sysc_config, 0x4806C054); // restore uart2_wakeup_enable		//dennis.oh 2011-02-10 bt sleep 
 
-	
 	Cosmo_padconf_restore();
 
 	return 0;
@@ -690,6 +827,15 @@ static int omap4_pm_enter(suspend_state_t suspend_state)
 
 static void omap4_pm_finish(void)
 {
+#if 0
+	//GPADC_CTRL
+	twl_i2c_write_u8(0x0E, 0xFF, 0x2E);
+	//TOGGLE1
+	twl_i2c_write_u8(0x0E, 0xA2, 0x90);
+	//MISC2
+	twl_i2c_write_u8(0x0D, 0x10, 0xE5);
+#endif
+
 	return;
 }
 
@@ -912,19 +1058,25 @@ static void __init prcm_clear_statdep_regs(void)
 	 * it enabled.
 	 */
 	/* MPU towards EMIF, L3_2 and L4CFG clockdomains */
+#if 0   // Dangerous Code. If you see lock-up in boot sound. Disable this for test.
+	reg = OMAP4430_MEMIF_STATDEP_MASK;
+	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM1_MPU_MOD,
+		OMAP4_CM_MPU_STATICDEP_OFFSET);
+#endif
 	 /*
 	  * REVISIT: Issue seen with Ducati towards EMIF, L3_2, L3_1,
 	  * L4CFG and L4WKUP static
 	  * dependency. Keep it enabled as of now.
 	  */
 
-
+#if 1
 	/* Ducati towards EMIF, L3_2, L3_1, L4CFG and L4WKUP clockdomains */
 	reg = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_1_STATDEP_MASK
 		| OMAP4430_L3_2_STATDEP_MASK | OMAP4430_L4CFG_STATDEP_MASK
 		| OMAP4430_L4WKUP_STATDEP_MASK;
 	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_CORE_MOD,
 		OMAP4_CM_DUCATI_STATICDEP_OFFSET);
+#endif
 
 	/* SDMA towards EMIF, L3_2, L3_1, L4CFG, L4WKUP, L3INIT
 	 * and L4PER clockdomains

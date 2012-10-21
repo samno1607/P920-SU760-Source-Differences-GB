@@ -361,12 +361,14 @@ config SPI_DW_MMIO
 #
 comment "SPI Protocol Masters"
 
+# LGE_FW_TDMB
 config SPI_TDMB
 	tristate "TDMB use SPI with DMB Chip"
 	default y
 	depends on ARCH_OMAP24XX || ARCH_OMAP34XX
 	help
 	Enable this driver to support SPI with RFBB chipset
+# LGE_FW_TDMB
 
 config SPI_SPIDEV
 	tristate "User mode SPI device driver support"

@@ -57,7 +57,6 @@ static int kxsd9_suspend(void *mlsl_handle,
 			 struct ext_slave_platform_data *pdata)
 {
 	int result;
-	(void *) slave;
 	/* CTRL_REGB: low-power standby mode */
 	result =
 	    MLSLSerialWriteSingle(mlsl_handle, pdata->address, 0x0d, 0x0);
@@ -112,7 +111,10 @@ static int kxsd9_read(void *mlsl_handle,
 		      struct ext_slave_platform_data *pdata,
 		      unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 static struct ext_slave_descr kxsd9_descr = {
@@ -122,6 +124,7 @@ static struct ext_slave_descr kxsd9_descr = {
 	/*.resume           = */ kxsd9_resume,
 	/*.read             = */ kxsd9_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "kxsd9",
 	/*.type             = */ EXT_SLAVE_TYPE_ACCELEROMETER,
 	/*.id               = */ ACCEL_ID_KXSD9,

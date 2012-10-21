@@ -21,6 +21,8 @@
 #include <linux/usb/otg.h>
 #include <linux/spi/spi.h>
 #include <linux/i2c/twl.h>
+//#include <linux/i2c/cma3000.h>
+//#include <linux/i2c/bq2415x.h>
 #include <linux/regulator/machine.h>
 #include <linux/input/sfh7741.h>
 #include <linux/leds.h>
@@ -34,7 +36,11 @@
 #include <mach/omap4-common.h>
 #include <mach/vibrator.h>
 #include <mach/emif.h>
+#if defined (CONFIG_MACH_LGE_CX2_EVB) 
+#include <mach/lpddr2-samsung.h>
+#else
 #include <mach/lpddr2-elpida.h>
+#endif
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -54,29 +60,38 @@
 #endif
 #include <plat/mmc.h>
 #include <plat/mcspi.h>
+//#include <plat/syntm12xx.h>
 #include <plat/omap4-keypad.h>
 #include <plat/hwspinlock.h>
 #include <plat/nokia-dsi-panel.h>
+//#include <plat/lge-dsi-panel.h>
 #include <plat/keypad.h>
 #include <plat/opp_twl_tps.h>
 
 #include <linux/synaptics_i2c_rmi.h>
-#ifdef CONFIG_SPI_IFX
 #include <linux/spi/ifx_n721_spi.h>
-#endif /* CONFIG_SPI_IFX */
 #include <linux/cosmo/fuel_gauge_max17043.h>
 
 #include "mux.h"
 
 #include "hsmmc.h"
 #include "smartreflex-class3.h"
+#if 1
 #include "board-4430sdp-wifi.h"	/* JamesLee :: FEB17 */
+#endif
+/* Added for FlexST */
 #include "board-connectivity.h"
 
 #define OMAP4_KBDOCP_BASE               0x4A31C000
 #define ETH_KS8851_IRQ			34
 #define ETH_KS8851_POWER_ON		48
 #define ETH_KS8851_QUART		138
+#if 0
+#define OMAP4_SFH7741_SENSOR_OUTPUT_GPIO	184
+#define OMAP4_SFH7741_ENABLE_GPIO		188
+
+#define OMAP4_CMA3000ACCL_GPIO		186
+#endif
 #define OMAP4SDP_MDM_PWR_EN_GPIO	157
 
 #define LED_SEC_DISP_GPIO 27
@@ -88,16 +103,56 @@
 
 #ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
 #define LGE_FW_TDMB
-#endif 
+#endif // CONFIG_MACH_LGE_COSMO_DOMASTIC
 
 #ifdef LGE_FW_TDMB
 #define COSMO_TDMB_IRQ_GPIO 		44
+#endif // LGE_FW_TDMB
+
+#if 0
+static void omap_prox_activate(int state);
+static int omap_prox_read(void);
+
+
+static struct sfh7741_platform_data omap_sfh7741_data = {
+		.irq = OMAP_GPIO_IRQ(OMAP4_SFH7741_SENSOR_OUTPUT_GPIO),
+		.prox_enable = 1,
+		.activate_func = omap_prox_activate,
+		.read_prox = omap_prox_read,
+};
+
+static struct platform_device sdp4430_proximity_device = {
+	.name		= "sfh7741",
+	.id		= 1,
+	.dev		= {
+		.platform_data = &omap_sfh7741_data,
+	},
+};
 #endif
 
 #ifdef CONFIG_SND_OMAP_SOC_HDMI
 static struct platform_device cosmopolitan_hdmi_audio_device = {
 	.name		= "hdmi-dai",
 	.id		= -1,
+};
+#endif
+#if 0
+static int sdp4430_keymap[] = {
+	KEY(0, 0, KEY_E),
+	KEY(0, 1, KEY_R),
+	KEY(0, 2, KEY_T),
+	KEY(0, 3, KEY_HOME),
+};
+
+static struct matrix_keymap_data sdp4430_keymap_data = {
+	.keymap			= sdp4430_keymap,
+	.keymap_size		= ARRAY_SIZE(sdp4430_keymap),
+};
+
+static struct omap4_keypad_platform_data sdp4430_keypad_data = {
+	.keymap_data		= &sdp4430_keymap_data,
+	.rows			= 8,
+	.cols			= 8,
 };
 #endif
 
@@ -107,9 +162,7 @@ static int omap_keymap[] = {
 	
 	KEY(1, 0, KEY_HOME),
 	KEY(1, 1, KEY_3D),
-#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
-	KEY(2, 1, KEY_TESTMODE_UNLOCK),	//  Pattern_Unlock_ATCommand 
-#endif
+
 	0,
 };
 
@@ -123,8 +176,8 @@ static struct resource sdp4430_kp_resources[] = {
 };
 
 static struct omap_kp_platform_data omap_kp_data = {
-	.rows		= 4,
-	.cols		= 4,
+	.rows		= 2,//MO2_COSMO_GB, 2011-10-13, hongkeon, pattern unlock issue
+	.cols		= 2,//end of MO2_COSMO_GB
 	.keymap		= omap_keymap,
 	.keymapsize	= ARRAY_SIZE(omap_keymap),
 	.delay		= 4,
@@ -154,6 +207,12 @@ static void ifx_n721_dev_init(void)
 		printk(KERN_ERR "Can't get MRDY GPIO\n");
 		return;
 	}
+#if 0	
+	if (gpio_request(MODEM_GPIO_AUDIO, "ifx audio") < 0) {
+		printk(KERN_ERR "Can't get MODEM_AUDIO GPIO\n");
+		return;
+	}
+#endif	
 	if (gpio_request(MODEM_GPIO_PWRON, "ifx pwron") < 0) {
 		printk(KERN_ERR "Can't get MODEM_PWRON GPIO\n");
 		return;
@@ -161,11 +220,20 @@ static void ifx_n721_dev_init(void)
 
 	gpio_direction_input(IFX_SRDY_GPIO);  //gpio_119
 	gpio_direction_output(IFX_MRDY_GPIO, 0);
+
+#if 0
+	gpio_direction_output(MODEM_GPIO_AUDIO, 1);
+#endif
+	//@@gpio_direction_output(MODEM_GPIO_PWRON, 1);
 }
 
 static struct omap2_mcspi_device_config ifxn721_mcspi_config = {
 	.turbo_mode = 0,
 	.single_channel = 1,	/* 0: slave, 1: master */
+	//.mode		= OMAP2_MCSPI_MASTER,
+	//.dma_mode	= 0,
+	//.force_cs_mode	= 0,
+	//.fifo_depth	= 0,
 };
 #endif /* CONFIG_SPI_IFX */
 
@@ -175,9 +243,9 @@ static struct spi_board_info sdp4430_spi_board_info[] __initdata = {
 
 #ifdef LGE_FW_TDMB
 		.bus_num                = 2,
-#else
+#else // LGE_FW_TDMB
 		.bus_num                = 1,
-#endif
+#endif // LGE_FW_TDMB
 
 		.chip_select            = 0,
 		.max_speed_hz           = 24000000,
@@ -192,9 +260,8 @@ static struct spi_board_info sdp4430_spi_board_info[] __initdata = {
 		.controller_data	= &ifxn721_mcspi_config,
 		.irq			= OMAP_GPIO_IRQ(IFX_SRDY_GPIO),
 	},
-#endif
+#endif /* CONFIG_SPI_IFX */	
 };
-
 
 #ifdef CONFIG_LGE_MTC_ETA
 struct platform_device cosmo_mtc_eta_log_device = {
@@ -202,7 +269,151 @@ struct platform_device cosmo_mtc_eta_log_device = {
 };
 #endif
 
+#if 0
+static int omap_ethernet_init(void)
+{
+	int status;
 
+	/* Request of GPIO lines */
+
+	status = gpio_request(ETH_KS8851_POWER_ON, "eth_power");
+	if (status) {
+		pr_err("Cannot request GPIO %d\n", ETH_KS8851_POWER_ON);
+		return status;
+	}
+
+	status = gpio_request(ETH_KS8851_QUART, "quart");
+	if (status) {
+		pr_err("Cannot request GPIO %d\n", ETH_KS8851_QUART);
+		goto error1;
+	}
+
+	status = gpio_request(ETH_KS8851_IRQ, "eth_irq");
+	if (status) {
+		pr_err("Cannot request GPIO %d\n", ETH_KS8851_IRQ);
+		goto error2;
+	}
+
+	/* Configuration of requested GPIO lines */
+
+	status = gpio_direction_output(ETH_KS8851_POWER_ON, 1);
+	if (status) {
+		pr_err("Cannot set output GPIO %d\n", ETH_KS8851_IRQ);
+		goto error3;
+	}
+
+	status = gpio_direction_output(ETH_KS8851_QUART, 1);
+	if (status) {
+		pr_err("Cannot set output GPIO %d\n", ETH_KS8851_QUART);
+		goto error3;
+	}
+
+	status = gpio_direction_input(ETH_KS8851_IRQ);
+	if (status) {
+		pr_err("Cannot set input GPIO %d\n", ETH_KS8851_IRQ);
+		goto error3;
+	}
+
+	return 0;
+
+error3:
+	gpio_free(ETH_KS8851_IRQ);
+error2:
+	gpio_free(ETH_KS8851_QUART);
+error1:
+	gpio_free(ETH_KS8851_POWER_ON);
+	return status;
+}
+#endif
+
+#if	0
+static struct gpio_led sdp4430_gpio_leds[] = {
+	{
+		.name	= "omap4:green:debug0",
+		.gpio	= 61,
+	},
+	{
+		.name	= "omap4:green:debug1",
+		.gpio	= 30,
+	},
+	{
+		.name	= "omap4:green:debug2",
+		.gpio	= 7,
+	},
+	{
+		.name	= "omap4:green:debug3",
+		.gpio	= 8,
+	},
+	{
+		.name	= "omap4:green:debug4",
+		.gpio	= 50,
+	},
+	{
+		.name	= "blue",
+		.default_trigger = "timer",
+		.gpio	= 169,
+	},
+	{
+		.name	= "red",
+		.default_trigger = "timer",
+		.gpio	= 170,
+	},
+	{
+		.name	= "green",
+		.default_trigger = "timer",
+		.gpio	= 139,
+	},
+};
+
+static struct gpio_led_platform_data sdp4430_led_data = {
+	.leds	= sdp4430_gpio_leds,
+	.num_leds	= ARRAY_SIZE(sdp4430_gpio_leds),
+};
+
+static struct platform_device sdp4430_leds_gpio = {
+	.name	= "leds-gpio",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &sdp4430_led_data,
+	},
+};
+
+static struct led_pwm sdp4430_pwm_leds[] = {
+	{
+	.name = "battery-led",
+	.pwm_id = 1,
+	.max_brightness = 255,
+	.pwm_period_ns = 7812500,
+	},
+};
+
+static struct led_pwm_platform_data sdp4430_pwm_data = {
+	.num_leds = 1,
+	.leds = sdp4430_pwm_leds,
+};
+
+static struct platform_device sdp4430_leds_pwm = {
+	.name	= "leds_pwm",
+	.id	= -1,
+	.dev	= {
+		.platform_data = &sdp4430_pwm_data,
+	},
+};
+
+static struct twl6040_vib_platform_data	sdp4430_vib_data = {
+	.max_timeout = 15000,
+	.active_low = 0,
+	.initial_vibrate = 0,
+};
+
+static struct platform_device sdp4430_vib = {
+	.name           = VIB_NAME,
+	.id             = -1,
+	.dev            = {
+		.platform_data  = &sdp4430_vib_data,
+	},
+};
+#endif
 
 static struct pwm_vib_platform_data vib_data = {
         .max_timeout            =       15000,
@@ -218,16 +429,200 @@ static struct platform_device vib = {
 	},
 };
 
+#if 0
+/* Begin Synaptic Touchscreen TM-01217 */
+
+static char *tm12xx_idev_names[] = {
+	"Synaptic TM12XX TouchPoint 1",
+	"Synaptic TM12XX TouchPoint 2",
+	"Synaptic TM12XX TouchPoint 3",
+	"Synaptic TM12XX TouchPoint 4",
+	"Synaptic TM12XX TouchPoint 5",
+	"Synaptic TM12XX TouchPoint 6",
+	NULL,
+};
+
+static u8 tm12xx_button_map[] = {
+	KEY_F1,
+	KEY_F2,
+};
+
+static struct tm12xx_ts_platform_data tm12xx_platform_data[] = {
+	{ /* Primary Controller */
+		.gpio_intr = 35,
+		.idev_name = tm12xx_idev_names,
+		.button_map = tm12xx_button_map,
+		.num_buttons = ARRAY_SIZE(tm12xx_button_map),
+		.repeat = 0,
+		.swap_xy = 1,
+	},
+	{ /* Secondary Controller */
+		.gpio_intr = 36,
+		.idev_name = tm12xx_idev_names,
+		.button_map = tm12xx_button_map,
+		.num_buttons = ARRAY_SIZE(tm12xx_button_map),
+		.repeat = 0,
+		.swap_xy = 1,
+	},
+};
+
+/* End Synaptic Touchscreen TM-01217 */
+#endif
+
 #if defined(CONFIG_TOUCHSCREEN_HUB_SYNAPTICS) || defined(CONFIG_TOUCHSCREEN_COSMO_SYNAPTICS) || defined(CONFIG_TOUCHSCREEN_COSMO_TM1709)
 #define HUB_TS_I2C_INT_GPIO   52
 
 static struct synaptics_i2c_rmi_platform_data heaven_ts_synaptics_platform_data[] = {
         {
 		.version	= 0x0,
-        .irqflags	= IRQF_TRIGGER_FALLING,
+		//.power		= &heaven_cypress_power,
+		//.flags		= SYNAPTICS_SWAP_XY,
+                .irqflags	= IRQF_TRIGGER_FALLING,
        }
 };
 #endif
+
+#if	0	// by dongjin73.kim	- not to prevent gpio corruption (gpio_27)
+static void sdp4430_set_primary_brightness(u8 brightness)
+{
+	if (brightness > 1) {
+		if (brightness == 255)
+			brightness = 0x7f;
+		else
+			brightness = (~(brightness/2)) & 0x7f;
+
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x30, TWL6030_TOGGLE3);
+		twl_i2c_write_u8(TWL_MODULE_PWM, brightness, LED_PWM2ON);
+	} else if (brightness <= 1) {
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x08, TWL6030_TOGGLE3);
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x38, TWL6030_TOGGLE3);
+	}
+}
+
+static void __init sdp4430_init_display_led(void)
+{
+	twl_i2c_write_u8(TWL_MODULE_PWM, 0xFF, LED_PWM2ON);
+	twl_i2c_write_u8(TWL_MODULE_PWM, 0x7F, LED_PWM2OFF);
+	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x30, TWL6030_TOGGLE3);
+}
+
+static void sdp4430_set_secondary_brightness(u8 brightness)
+{
+	if (brightness > 0)
+		brightness = 1;
+
+	gpio_set_value(LED_SEC_DISP_GPIO, brightness);
+}
+
+static struct omap4430_sdp_disp_led_platform_data sdp4430_disp_led_data = {
+	.flags = LEDS_CTRL_AS_ONE_DISPLAY,
+	.display_led_init = sdp4430_init_display_led,
+	.primary_display_set = sdp4430_set_primary_brightness,
+	.secondary_display_set = sdp4430_set_secondary_brightness,
+};
+
+static void __init omap_disp_led_init(void)
+{
+	/* Seconday backlight control */
+	gpio_request(DSI2_GPIO_59, "dsi2_bl_gpio");
+	gpio_direction_output(DSI2_GPIO_59, 0);
+
+	if (sdp4430_disp_led_data.flags & LEDS_CTRL_AS_ONE_DISPLAY) {
+		pr_info("%s: Configuring as one display LED\n", __func__);
+		gpio_set_value(DSI2_GPIO_59, 1);
+	}
+
+	gpio_request(LED_SEC_DISP_GPIO, "dsi1_bl_gpio");
+	gpio_direction_output(LED_SEC_DISP_GPIO, 1);
+	mdelay(120);
+	gpio_set_value(LED_SEC_DISP_GPIO, 0);
+}
+
+static struct platform_device sdp4430_disp_led = {
+	.name	=	"display_led",
+	.id	=	-1,
+	.dev	= {
+		.platform_data = &sdp4430_disp_led_data,
+	},
+};
+
+static struct platform_device sdp4430_keypad_led = {
+	.name	=	"keypad_led",
+	.id	=	-1,
+	.dev	= {
+		.platform_data = NULL,
+	},
+};
+#endif
+
+#if 0
+static struct nokia_dsi_panel_data dsi_panel = {
+		.name	= "taal",
+		.reset_gpio	= 102,
+		.use_ext_te	= false,
+		.ext_te_gpio	= 101,
+		.use_esd_check	= false,
+		.set_backlight	= NULL,
+};
+
+static struct nokia_dsi_panel_data dsi2_panel = {
+                .name   = "taal2",
+                .reset_gpio     = 104,
+                .use_ext_te     = false,
+                .ext_te_gpio    = 103,
+                .use_esd_check  = false,
+                .set_backlight  = NULL,
+};
+
+static struct omap_dss_device sdp4430_lcd_device = {
+	.name			= "lcd",
+	.driver_name		= "taal",
+	.type			= OMAP_DISPLAY_TYPE_DSI,
+	.data			= &dsi_panel,
+	.phy.dsi		= {
+		.clk_lane	= 1,
+		.clk_pol	= 0,
+		.data1_lane	= 2,
+		.data1_pol	= 0,
+		.data2_lane	= 3,
+		.data2_pol	= 0,
+		.div		= {
+			.lck_div	= 1,
+			.pck_div	= 5,
+			.regm		= 150,
+			.regn		= 17,
+			.regm_dispc	= 4,
+			.regm_dsi	= 4,
+			.lp_clk_div	= 8,
+		},
+	},
+	.channel 		= OMAP_DSS_CHANNEL_LCD,
+};
+
+static struct omap_dss_device sdp4430_lcd2_device = {
+	.name			= "lcd2",
+	.driver_name		= "taal2",
+	.type			= OMAP_DISPLAY_TYPE_DSI,
+	.data			= &dsi2_panel,
+	.phy.dsi		= {
+		.clk_lane	= 1,
+		.clk_pol	= 0,
+		.data1_lane	= 2,
+		.data1_pol	= 0,
+		.data2_lane	= 3,
+		.data2_pol	= 0,
+		.div		= {
+			.lck_div	= 1,
+			.pck_div	= 5,
+			.regm		= 150,
+			.regn		= 17,
+			.lp_clk_div	= 8,
+		},
+	},
+	.channel		= OMAP_DSS_CHANNEL_LCD2,
+};
+
+#else
 
 static struct nokia_dsi_panel_data dsi_panel = {
 		.name	= "hub_panel",
@@ -260,18 +655,49 @@ static struct omap_dss_device sdp4430_lcd_device = {
 };
 
 /* Display */
-
 #define GPIO_144	144
 #define GPIO_190	190
 #define GPIO_27		27
 
+#if defined (CONFIG_MACH_LGE_CX2) 
+static int cx2_panel_enable_lcd(struct omap_dss_device *dssdev)
+{
+	if (dssdev->channel == OMAP_DSS_CHANNEL_LCD2) {
+   retention mode and code refine. */
+		gpio_request(GPIO_27, "dsi2_lcd_en");
+		gpio_direction_output(GPIO_27, 0);
+		gpio_set_value(GPIO_27, 1);
+
+		mdelay(10);
+	//	twl_i2c_write_u8(TWL_MODULE_PWM, 0xFF, PWM2ON); /*0xBD = 0xFF*/
+	//	twl_i2c_write_u8(TWL_MODULE_PWM, 0x7F, PWM2OFF); /*0xBE = 0x7F*/
+	//	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x30, TOGGLE3);
+	} else {
+	}
+
+	return 0;
+}
+
+static int cx2_panel_disable_lcd(struct omap_dss_device *dssdev)
+{
+
+	if (dssdev->channel == OMAP_DSS_CHANNEL_LCD2) {
+  retention mode and code refine. */
+		gpio_set_value(GPIO_27, 0);
+	} else {
+	}
+	return 0;
+}
+#else
 static int sdp4430_panel_enable_lcd(struct omap_dss_device *dssdev)
 {
 	if (dssdev->channel == OMAP_DSS_CHANNEL_LCD2) {
-
                 gpio_request(GPIO_190, "3d_lcd_en");
                 gpio_direction_output(GPIO_144, 0);
+ 
                 gpio_request(GPIO_144, "dsi2_lcd_en");
+                //gpio_direction_output(GPIO_27, 1);
+
                 gpio_request(GPIO_27, "3d_bank_sel");
                 gpio_direction_output(GPIO_190, 1);
 		mdelay(10);
@@ -280,7 +706,6 @@ static int sdp4430_panel_enable_lcd(struct omap_dss_device *dssdev)
                 twl_i2c_write_u8(TWL_MODULE_PWM, 0x7F, PWM2OFF); /*0xBE = 0x7F*/
                 twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x30, TOGGLE3);
 	} else {
-
 	}
 
 	return 0;
@@ -290,17 +715,16 @@ static int sdp4430_panel_disable_lcd(struct omap_dss_device *dssdev)
 {
 
 	if (dssdev->channel == OMAP_DSS_CHANNEL_LCD2) {
-
 		gpio_set_value(GPIO_190, 0);
 		gpio_set_value(GPIO_144, 0);
-		
-
+		//gpio_set_value(GPIO_27, 0);
 	} else {
 	}
 	return 0;
 }
+#endif
 
-#if defined(CONFIG_PANEL_HUB) || defined(CONFIG_PANEL_COSMO)
+#if defined(CONFIG_PANEL_HUB) || defined(CONFIG_PANEL_COSMO) || defined (CONFIG_MACH_LGE_CX2)
 #define DSI_CLOCK_POLARITY  0   /* +/- pin order */
 #define DSI_DATA0_POLARITY  0   /* +/- pin order */
 #define DSI_DATA1_POLARITY  0   /* +/- pin order */
@@ -309,6 +733,62 @@ static int sdp4430_panel_disable_lcd(struct omap_dss_device *dssdev)
 #define DSI_DATA1_LANE      2   /* Data1 lane position: 3 */
 #endif
 
+#if defined (CONFIG_MACH_LGE_CX2) 
+static struct omap_dss_device cx2_lcd2_device = {
+	.name			= "2lcd",
+	.driver_name		="lh430wv4_panel",
+	.type = OMAP_DISPLAY_TYPE_DSI,
+	.phy.dpi.data_lines = 24,	 /* if use bpp32, set as 24 */
+
+	.panel.config = OMAP_DSS_LCD_TFT | OMAP_DSS_LCD_ONOFF | OMAP_DSS_LCD_RF,
+	.panel.timings.x_res = 480,
+	.panel.timings.y_res = 800,
+
+	.panel.timings.vfp = 0,
+	.panel.timings.vsw = 8,	
+	.panel.timings.vbp = 22,
+	.panel.timings.hfp = 14,
+	.panel.timings.hsw = 51,	 
+	.panel.timings.hbp = 19,
+
+	.panel.width_in_mm = 57,
+	.panel.height_in_mm = 94,
+
+	.phy.dsi.clk_lane = 1,
+	.phy.dsi.data1_lane = 3,
+	.phy.dsi.data2_lane = 2,
+	.phy.dsi.num_data_lanes = 2,
+	.phy.dsi.clk_pol = DSI_CLOCK_POLARITY,
+	.phy.dsi.data1_pol = DSI_DATA0_POLARITY,
+	.phy.dsi.data2_pol = DSI_DATA1_POLARITY,
+
+	.phy.dsi.div.regn = 20,
+	.phy.dsi.div.regm = 177,
+	.phy.dsi.div.regm_dispc = 5,
+	.phy.dsi.div.regm_dsi = 7,
+
+	.phy.dsi.div.lck_div = 1,
+	.phy.dsi.div.pck_div = 5,
+
+	.phy.dsi.ext_te = true,
+	.phy.dsi.ext_te_gpio = 103,
+
+	.ctrl.pixel_size = 24,
+
+	.phy.dsi.div.lp_clk_div = 12,
+	.phy.dsi.mode = OMAP_DSI_MODE_VIDEO,
+
+	.phy.dsi.timings.vfp = 1,
+	.phy.dsi.timings.vsa = 8,
+	.phy.dsi.timings.vbp = 22,		 
+	.phy.dsi.timings.hfp = 20,
+	.phy.dsi.timings.hsa = 58,
+	.phy.dsi.timings.hbp = 101,
+	.platform_enable	=	cx2_panel_enable_lcd,
+	.platform_disable	=	cx2_panel_disable_lcd,
+	.channel			=	OMAP_DSS_CHANNEL_LCD2,
+};
+#else
 static struct omap_dss_device sdp4430_lcd2_device = {
 	.name			= "2lcd",
 	.driver_name		="cosmo_panel",
@@ -334,10 +814,17 @@ static struct omap_dss_device sdp4430_lcd2_device = {
 	.phy.dsi.data1_pol = DSI_DATA0_POLARITY,
 	.phy.dsi.data2_pol = DSI_DATA1_POLARITY,
 
+#if 1 //Video mode
 	.phy.dsi.div.regn = 20,
 	.phy.dsi.div.regm = 177,  
 	.phy.dsi.div.regm_dispc = 5,
 	.phy.dsi.div.regm_dsi = 7,
+#else //cmd mode
+	.phy.dsi.div.regn = 20,
+	.phy.dsi.div.regm = 110,
+	.phy.dsi.div.regm3 = 3,
+	.phy.dsi.div.regm4 = 10,
+#endif
 
 	.phy.dsi.div.lck_div = 1,
 	.phy.dsi.div.pck_div = 5,
@@ -357,14 +844,34 @@ static struct omap_dss_device sdp4430_lcd2_device = {
 	.platform_disable	=	sdp4430_panel_disable_lcd,
 	.channel			=	OMAP_DSS_CHANNEL_LCD2,
 };
+#endif /*CONFIG_MACH_LGE_CX2*/
+#endif
 
 static int sdp4430_panel_enable_hdmi(struct omap_dss_device *dssdev);
 static void sdp4430_panel_disable_hdmi(struct omap_dss_device *dssdev);
 
 #ifdef CONFIG_OMAP2_DSS_HDMI
+#if defined (CONFIG_MACH_LGE_CX2) 
+static int cx2_panel_enable_hdmi(struct omap_dss_device *dssdev)
+{
+	printk("[cx2_panel_enable_hdmi]\n");
+
+	gpio_set_value(HDMI_GPIO_60, 1);
+//	gpio_set_value(HDMI_GPIO_41, 1);
+	return 0;
+}
+
+static void cx2_panel_disable_hdmi(struct omap_dss_device *dssdev)
+{
+	printk("[cx2_panel_disable_hdmi]\n");
+
+	gpio_set_value(HDMI_GPIO_60, 1); // novashock.lee PATCH FOR MWC
+//	gpio_set_value(HDMI_GPIO_41, 0);
+}
+
+#else
 static int sdp4430_panel_enable_hdmi(struct omap_dss_device *dssdev)
 {
-
 	gpio_set_value(HDMI_GPIO_60, 1);
 	gpio_set_value(HDMI_GPIO_41, 1);
 	return 0;
@@ -372,16 +879,42 @@ static int sdp4430_panel_enable_hdmi(struct omap_dss_device *dssdev)
 
 static void sdp4430_panel_disable_hdmi(struct omap_dss_device *dssdev)
 {
-	gpio_set_value(HDMI_GPIO_60, 1); 
+	gpio_set_value(HDMI_GPIO_60, 1); // novashock.lee PATCH FOR MWC
 	gpio_set_value(HDMI_GPIO_41, 0);
 }
-
+#endif
 static __attribute__ ((unused)) void __init sdp4430_hdmi_init(void)
 {
 	return;
 }
 #endif /* CONFIG_OMAP2_DSS_HDMI */
 
+#if defined (CONFIG_MACH_LGE_CX2) 
+static struct omap_dss_device cx2_hdmi_device = {
+	.name = "hdmi",
+	.driver_name = "hdmi_panel",
+	.type = OMAP_DISPLAY_TYPE_HDMI,
+	.phy.dpi.data_lines = 24,
+	.platform_enable = cx2_panel_enable_hdmi,
+	.platform_disable = cx2_panel_disable_hdmi,
+	.channel = OMAP_DSS_CHANNEL_DIGIT,
+};
+
+
+static struct omap_dss_device *cx2_dss_devices[] = {
+	//&sdp4430_lcd_device,
+	&cx2_lcd2_device,
+	&cx2_hdmi_device,
+};
+
+static struct omap_dss_board_info cx2_dss_data = {
+	.num_devices	=	ARRAY_SIZE(cx2_dss_devices),
+	.devices		=	cx2_dss_devices,
+	.default_device =	&cx2_lcd2_device,
+};
+
+
+#else
 static struct omap_dss_device sdp4430_hdmi_device = {
 	.name = "hdmi",
 	.driver_name = "hdmi_panel",
@@ -393,6 +926,7 @@ static struct omap_dss_device sdp4430_hdmi_device = {
 };
 
 static struct omap_dss_device *sdp4430_dss_devices[] = {
+	//&sdp4430_lcd_device,
 	&sdp4430_lcd2_device,
 	&sdp4430_hdmi_device,
 };
@@ -403,6 +937,8 @@ static struct omap_dss_board_info sdp4430_dss_data = {
 	.default_device	=	&sdp4430_lcd2_device,
 };
 
+#endif
+
 /* wl128x BT, FM, GPS connectivity chip */
 static int gpios[] = {166, -1, -1};
 static struct platform_device wl128x_device = {
@@ -411,13 +947,11 @@ static struct platform_device wl128x_device = {
 	.dev.platform_data = &gpios,
 };
 
-
-static struct platform_device cosmo_gps_gpio =
+static struct platform_device gps_gpio =
 {
-    .name = "cosmo_gps_gpio",
+    .name = "gps_gpio",
     .id   = -1,
 };
-
 
 static struct platform_device omap_kp_leds_device = {
 	.name	=	"keypad_led",
@@ -430,7 +964,6 @@ static struct platform_device cosmo_charger_device= {
 };
 
 #if defined(CONFIG_LG_FW_MAX17043_FUEL_GAUGE_GPIO)
-
 static struct max17043_platform_data max17043_pdata = {
 	.slave_addr = FUEL_GAUGE_MAX17043_SLAVE_ID,
 	.gpio_alert	= FUEL_GAUGE_MAX17043_GPIO_ALERT,	/* active low */
@@ -448,21 +981,27 @@ static struct platform_device cosmo_fuel_gauge_device= {
 };
 #endif
 static struct platform_device *sdp4430_devices[] __initdata = {
+	//&sdp4430_disp_led,
+	//&sdp4430_proximity_device,
+#if	0	// by dongjin73.kim
+	&sdp4430_leds_pwm,
+	&sdp4430_leds_gpio,
+	&wl128x_device,
+	&sdp4430_vib,
+	&sdp4430_keypad_led,
+#endif 
 
 #ifdef CONFIG_SND_OMAP_SOC_HDMI
 	&cosmopolitan_hdmi_audio_device,
 #endif
 
-    &cosmo_gps_gpio,
-
+    &gps_gpio,
 	&vib,
 	&omap_kp_leds_device,
 	&omap_kp_device,
-
 #ifdef CONFIG_LGE_MTC_ETA
       &cosmo_mtc_eta_log_device,
 #endif
-
 	&cosmo_charger_device,
 #if defined(CONFIG_LG_FW_MAX17043_FUEL_GAUGE_GPIO)
 	&cosmo_fuel_gauge_device,
@@ -523,7 +1062,7 @@ static struct omap2_hsmmc_info mmc[] = {
   #if defined(CONFIG_PM_RUNTIME) 
 		.power_saving	=	true,
   #endif
-#endif	
+#endif	//CONFIG_MACH_LGE_VMMC_ALWAYSON_FORCED		
 	},
 	{
 		.mmc		=	5,
@@ -531,6 +1070,11 @@ static struct omap2_hsmmc_info mmc[] = {
 		.gpio_cd	=	-EINVAL,
 		.gpio_wp	=	-EINVAL,
 		.ocr_mask	=	MMC_VDD_165_195,
+#if 0	/* JamesLee :: FEB17 */
+#ifdef CONFIG_PM_RUNTIME
+		.power_saving	= true,
+#endif
+#endif
 	},
 	{}	/* Terminator */
 };
@@ -547,6 +1091,12 @@ static struct regulator_consumer_supply sdp4430_cam2_supply[] = {
 		.supply = "cam2pwr",
 	},
 };
+
+#if defined (CONFIG_MACH_LGE_CX2) 
+static struct regulator_consumer_supply twl6030_vdac_supply[] = {
+	REGULATOR_SUPPLY("vdac", NULL),
+};
+#endif
 static int omap4_twl6030_hsmmc_late_init(struct device *dev)
 {
 	int ret = 0;
@@ -561,12 +1111,12 @@ static int omap4_twl6030_hsmmc_late_init(struct device *dev)
 #ifndef CONFIG_MACH_LGE_MMC_COVER
 		pdata->slots[0].card_detect_irq = TWL6030_IRQ_BASE + MMCDETECT_INTR_OFFSET;
 		pdata->slots[0].card_detect = twl6030_mmc_card_detect;
-
+//20110409	KIMBYUNGCHUL SD_CARD_DETECTION_UPDATE_0409	[START]
 #else
   #if defined(CONFIG_MACH_LGE_MMC_ENHANCED_COVER)
 		pdata->slots[0].card_detect_irq_by_data3pin = TWL6030_IRQ_BASE + MMCDETECT_INTR_OFFSET;		
   #endif
-
+//20110409	KIMBYUNGCHUL SD_CARD_DETECTION_UPDATE_0409	[END]
 #endif		
 	}
 	return ret;
@@ -594,6 +1144,32 @@ static int __init omap4_twl6030_hsmmc_init(struct omap2_hsmmc_info *controllers)
 
 	return 0;
 }
+
+#if defined (CONFIG_MACH_LGE_CX2)
+#define TWL6030_REGULATOR_DEVICE(_id, _minmv, _maxmv, _always_on, _boot_on)		\
+	static struct regulator_init_data twl6030_##_id##_data = {		\
+		.constraints = {						\
+			.min_uV = (_minmv),					\
+			.max_uV = (_maxmv),					\
+			.apply_uV = 1,						\
+			.always_on = (_always_on),				\
+            .boot_on = (_boot_on),                  \
+			.valid_modes_mask	= (REGULATOR_MODE_NORMAL	\
+					| REGULATOR_MODE_STANDBY),		\
+			.valid_ops_mask	 = (REGULATOR_CHANGE_VOLTAGE		\
+					| REGULATOR_CHANGE_MODE			\
+					| REGULATOR_CHANGE_STATUS),		\
+			.state_mem = {						\
+				.enabled = false,				\
+				.disabled = true,				\
+			},							\
+		},								\
+		.num_consumer_supplies = ARRAY_SIZE(twl6030_##_id##_supply),	\
+		.consumer_supplies = twl6030_##_id##_supply,			\
+	};
+
+TWL6030_REGULATOR_DEVICE(vdac, 	1800000, 1800000, 0,0);
+#endif
 
 static struct regulator_init_data sdp4430_vaux1 = {
 	.constraints = {
@@ -751,22 +1327,18 @@ static struct twl4030_bci_platform_data sdp4430_bci_data = {
 	.battery_tmp_tbl		= sdp4430_batt_table,
 	.tblsize			= ARRAY_SIZE(sdp4430_batt_table),
 };
-
 #if defined(CONFIG_MACH_LGE_COSMO_REV_A)
 #define EAR_SENSE_GPIO	21
 #endif
-
 
 static struct twl4030_codec_audio_data twl6040_audio = {
 	.audio_mclk	= 38400000,
 	.audpwron_gpio  = 127,
 	.naudint_irq    = OMAP44XX_IRQ_SYS_2N,
-
 #if defined(CONFIG_MACH_LGE_COSMO_REV_A)
 	.hsjack_gpio	= EAR_SENSE_GPIO,
 	.hsjack_irq		= OMAP_GPIO_IRQ(EAR_SENSE_GPIO),
 #endif
-
 };
 
 static struct twl4030_codec_vibra_data twl6040_vibra = {
@@ -789,7 +1361,11 @@ static struct twl4030_platform_data sdp4430_twldata = {
 	.vusim		= &sdp4430_vusim,
 	.vana		= &sdp4430_vana,
 	.vcxio		= &sdp4430_vcxio,
+#if defined (CONFIG_MACH_LGE_CX2)
+	.vdac		= &twl6030_vdac_data,
+#else
 	.vdac		= &sdp4430_vdac,
+#endif
 	.vusb		= &sdp4430_vusb,
 	.vaux1		= &sdp4430_vaux1,
 	.vaux2		= &sdp4430_vaux2,
@@ -800,6 +1376,31 @@ static struct twl4030_platform_data sdp4430_twldata = {
 	/* children */
 	.codec          = &twl6040_codec,
 };
+
+#if 0
+static struct bq2415x_platform_data sdp4430_bqdata = {
+	.max_charger_voltagemV = 4200,
+	.max_charger_currentmA = 1550,
+};
+
+static struct cma3000_platform_data cma3000_platform_data = {
+	.fuzz_x = 25,
+	.fuzz_y = 25,
+	.fuzz_z = 25,
+	.g_range = CMARANGE_8G,
+	.mode = CMAMODE_MEAS400,
+	.mdthr = 0x8,
+	.mdfftmr = 0x33,
+	.ffthr = 0x8,
+	.irqflags = IRQF_TRIGGER_HIGH,
+};
+
+static struct pico_platform_data picodlp_platform_data[] = {
+	[0] = { /* DLP Controller */
+		.gpio_intr = 40,
+	},
+};
+#endif
 
 #if defined(CONFIG_SUBPMIC_LP8720)
 #include <mach/lp8720.h>
@@ -822,54 +1423,210 @@ static struct lm3528_platform_data	lm3528_pdata = {
 };
 #endif
 
+#if defined(CONFIG_BACKLIGHT_LM3530) 
+#include <mach/lm3530.h>
+static struct lm3530_platform_data lm3530_pdata = {
+	.gpio_hwen = 98,
+	.gpio_pwm  = 144,
+};
+#endif
+
 #if defined(CONFIG_COSMO_CAMERAFLASH_LM3559)
 #include <mach/lm3559.h>
 static struct lm3559_platform_data	lm3559_pdata = {
 	.gpio_hwen	=	191,
 };
 #endif
-
-#if defined(CONFIG_SENSORS_MPU3050) || defined(CONFIG_SENSORS_MPU3050_MODULE)
+#if defined(CONFIG_MPU_SENSORS_MPU3050) || defined(CONFIG_SENSORS_MPU3050_MODULE)
 #include <linux/mpu.h>
 
+#define GPIO_GYRO_INT		28	// GYRO_FSYNC
+#define GPIO_MOTION_INT		29
+
 static struct mpu3050_platform_data mpu3050_data = {
-    .int_config  = 0x10,
-    .orientation = {  1,  0,  0, 
-                      0,  1,  0, 
-                      0,  0,  1 },
-    .level_shifter = 0,
-    .accel = {
-#if !defined(CONFIG_SENSORS_MPU3050_MODULE)
-        .get_slave_descr = kxtf9_get_slave_descr,
+	.int_config = 0x10,
+	.orientation = {
+		1, 0, 0,
+		0, 1, 0,
+		0, 0, 1
+	},
+	.level_shifter = 0,
+	.accel = {
+#if !defined(CONFIG_MPU_SENSORS_MPU3050_MODULE)
+		.get_slave_descr = kxtf9_get_slave_descr,
 #endif
-        .adapt_num   = 4,
-        .bus         = EXT_SLAVE_BUS_SECONDARY,
-        .address     = 0x0F,
-        .orientation = {  1,  0,  0, 
-                          0,  1,  0, 
-                          0,  0,  1 },
-    },
-    .compass = {
-#if !defined(CONFIG_SENSORS_MPU3050_MODULE)
-        .get_slave_descr = ami30x_get_slave_descr,
+		.irq	=	OMAP_GPIO_IRQ(GPIO_MOTION_INT),
+		.adapt_num	 = 4,
+		.bus		 = EXT_SLAVE_BUS_SECONDARY,
+		.address	 = 0x0F,
+#if defined (CONFIG_MACH_LGE_CX2_REV_A) 
+		.orientation = {
+			-1, 0, 0, 
+			0, -1, 0, 
+			0,  0, 1
+		},
+#else
+		.orientation = {
+			1, 0, 0,  
+			0, 1, 0,  
+			0, 0, 1
+		},
 #endif
-#if defined(CONFIG_MACH_LGE_COSMO_EVB_C) || defined(CONFIG_MACH_LGE_COSMO_REV_A) || defined(CONFIG_MACH_LGE_COSMO_REV_B) || defined(CONFIG_MACH_LGE_COSMO_REV_C)
-		.adapt_num	= 2,
+	},
+	.compass = {
+#if !defined(CONFIG_MPU_SENSORS_MPU3050_MODULE)
+		.get_slave_descr = ami30x_get_slave_descr,
+#endif
+		.adapt_num  = 4,
 		.bus         = EXT_SLAVE_BUS_PRIMARY,
-        .address     = 0x0E,
-        .orientation = {  1,  0,  0,
-                          0, -1,  0,
-               	          0,  0, -1 },
-#else 
-		.adapt_num	= 4,
-		.bus         = EXT_SLAVE_BUS_PRIMARY,
-        .address     = 0x0E,
-        .orientation = {  0,  1,  0,
-               	          1,  0,  0,
-                       	  0,  0, -1 },
+		.address     = 0x0E,
+#if defined (CONFIG_MACH_LGE_CX2_REV_A) 
+		.orientation = {
+			0,  1,  0,
+			1,  0,  0,
+			0,  0,  1
+		},
+#else
+		.orientation = {
+			0,  1,  0,
+			1,  0,  0,
+			0,  0,  -1
+		},
 #endif
-    },
+	},
 };
+#endif
+
+#if defined (CONFIG_MACH_LGE_CX2) 
+#include <linux/i2c-gpio.h>
+#include <linux/pn544.h>
+static struct pn544_i2c_platform_data nfc_pdata = {
+	.irq_gpio = NFC_GPIO_IRQ,
+	.ven_gpio = NFC_GPIO_VEN,
+	.firm_gpio = NFC_GPIO_FRIM,
+};
+
+#define GPIO_MHL_I2C_SCL	8
+#define GPIO_MHL_I2C_SDA	182
+
+#define GPIO_NFC_I2C_SCL	174
+#define GPIO_NFC_I2C_SDA	173
+
+
+enum {
+	MHL_GPIO_I2C = 0,
+	NFC_GPIO_I2C = 1,
+	MAX_GPIO_I2C,
+};
+#define I2C_ID(x) (x + 5)
+
+static struct i2c_gpio_platform_data i2c_gpio_data[] = {
+	{
+		.sda_pin = GPIO_MHL_I2C_SDA,
+		.scl_pin = GPIO_MHL_I2C_SCL, 
+		.sda_is_open_drain = 0,
+		.scl_is_open_drain = 0,
+		.udelay = 2,
+	},
+	{
+		.sda_pin = GPIO_NFC_I2C_SDA,
+		.scl_pin = GPIO_NFC_I2C_SCL, 
+		.sda_is_open_drain = 0,
+		.scl_is_open_drain = 0,
+		.udelay = 2,
+	},
+
+};
+
+//static struct platform_device *__initdata i2c_gpio_device[MAX_GPIO_I2C] = {
+static struct platform_device i2c_gpio_device[] = {
+	{
+		.name = "i2c-gpio",
+		.id = I2C_ID(MHL_GPIO_I2C),
+		.dev.platform_data = &i2c_gpio_data[MHL_GPIO_I2C],
+	},
+	{
+		.name = "i2c-gpio",
+		.id = I2C_ID(NFC_GPIO_I2C),
+		.dev.platform_data = &i2c_gpio_data[NFC_GPIO_I2C],
+	},
+
+};
+
+//static struct i2c_board_info __initdata i2c_gpio_info_mhl[] = {
+struct i2c_board_info i2c_gpio_info_mhl[] = {
+	{
+		I2C_BOARD_INFO("SII9244", 0x72>>1),
+	},
+	{
+		I2C_BOARD_INFO("SII9244A", 0x7A>>1),
+	},
+	{
+		I2C_BOARD_INFO("SII9244B", 0x92>>1),
+	},
+	{
+		I2C_BOARD_INFO("SII9244C", 0xC8>>1),
+	},
+};
+
+struct i2c_board_info i2c_gpio_info_nfc[] = {
+	{
+		I2C_BOARD_INFO("pn544", 0x28),
+		.type = "pn544",
+		.irq = OMAP_GPIO_IRQ(NFC_GPIO_IRQ),
+		.platform_data = &nfc_pdata,
+
+	},
+};
+
+
+static void __init lge_add_i2c_gpio_device(void)
+{
+	int i, ret;
+
+	for (i = 0; i < MAX_GPIO_I2C; i++) 
+	{
+		platform_device_register(&i2c_gpio_device[i]);
+	}
+	printk( "[MHL]i2c_register_board_info\n");
+	printk( "[NFC]i2c_register_board_info\n");
+
+	ret = i2c_register_board_info(I2C_ID(MHL_GPIO_I2C), i2c_gpio_info_mhl,
+				 ARRAY_SIZE(i2c_gpio_info_mhl));
+	printk( "[MHL]i2c_register_board_info ret:%d\n", ret);
+	ret = i2c_register_board_info(I2C_ID(NFC_GPIO_I2C), i2c_gpio_info_nfc,
+				 ARRAY_SIZE(i2c_gpio_info_nfc));
+	printk( "[NFC]i2c_register_board_info ret:%d\n", ret);
+
+
+}
+
+int device_power_control(char* reg_id, int on){
+	static struct regulator *device_regulator = NULL;
+
+	device_regulator = regulator_get_exclusive(NULL, reg_id);
+	printk(KERN_INFO "[POWER_CONTROL] device_regulator: %x", device_regulator);
+	
+	if (IS_ERR_VALUE(device_regulator)) {
+		printk(KERN_ERR "[POWER_CONTROL] it couldn't be initialized");
+		return -1;
+	}
+
+	printk(KERN_INFO "[POWER_CONTROL] %s : %s", reg_id, on ? "ON" : "OFF");
+
+	if(on)
+		regulator_enable(device_regulator);
+	else
+		regulator_disable(device_regulator);
+
+	regulator_put(device_regulator);
+	return 0;
+}
+
+int hpd_enable_control(int on){
+	return device_power_control("vdac", on);
+}
+
 #endif
 
 static struct i2c_board_info __initdata sdp4430_i2c_boardinfo[] = {
@@ -905,6 +1662,13 @@ static struct i2c_board_info __initdata sdp4430_i2c_2_boardinfo[] = {
 		.platform_data	=	&lm3528_pdata,
 	},
 #endif
+#if defined(CONFIG_BACKLIGHT_LM3530)
+		{
+			I2C_BOARD_INFO(LM3530_I2C_NAME,  LM3530_I2C_ADDR),
+			.platform_data	=	&lm3530_pdata,
+		},
+#endif
+
 	{
 		I2C_BOARD_INFO("lgdp4512_barrierA", 0x74),		
 	},
@@ -920,6 +1684,7 @@ static struct i2c_board_info __initdata sdp4430_i2c_2_boardinfo[] = {
 };
 
 static struct i2c_board_info __initdata sdp4430_i2c_3_boardinfo[] = {
+/* MAX14526 (MUIC) */
 #if !defined( CONFIG_MACH_LGE_COSMO_EVB_B) \
 	&& !defined(CONFIG_MACH_LGE_COSMO_EVB_C)
 	{
@@ -955,11 +1720,12 @@ static struct i2c_board_info __initdata sdp4430_i2c_3_boardinfo[] = {
 };
 
 static struct i2c_board_info __initdata sdp4430_i2c_4_boardinfo[] = {
+/* MAX14526 (MUIC) */
 #if defined( CONFIG_MACH_LGE_COSMO_EVB_B) || defined(CONFIG_MACH_LGE_COSMO_EVB_C)
 	{
 		I2C_BOARD_INFO("max14526", 0x44),
 	},
-#endif
+#endif // CONFIG_MACH_LGE_COSMO_EVB_B
 #if defined(CONFIG_MACH_LGE_COSMO_EVB_C) || defined(CONFIG_MACH_LGE_COSMO_REV_A) || defined(CONFIG_MACH_LGE_COSMO_REV_B) || defined(CONFIG_MACH_LGE_COSMO_REV_C)
 #if defined( CONFIG_SENSORS_APDS9900 )
 	{
@@ -967,25 +1733,81 @@ static struct i2c_board_info __initdata sdp4430_i2c_4_boardinfo[] = {
 	},
 #endif
 #endif
-
-#if defined(CONFIG_SENSORS_MPU3050) || defined(CONFIG_SENSORS_MPU3050_MODULE)
+//ADD_E
+#if defined(CONFIG_MPU_SENSORS_MPU3050) || defined(CONFIG_SENSORS_MPU3050_MODULE)
 	{
-		I2C_BOARD_INFO("mpu3050",0x68),
-		//.irq = OMAP_GPIO_IRQ(27),
+		I2C_BOARD_INFO(MPU_NAME, DEFAULT_MPU_SLAVEADDR),
 		.platform_data = &mpu3050_data,
+        .irq    =       OMAP_GPIO_IRQ(GPIO_GYRO_INT),
 	},
 #endif
 };
+
+#if 0
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.phy_reset  = false,
+	.reset_gpio_port[0]  = -EINVAL,
+	.reset_gpio_port[1]  = -EINVAL,
+	.reset_gpio_port[2]  = -EINVAL
+};
+#endif
 
 static struct omap_i2c_bus_board_data __initdata sdp4430_i2c_bus_pdata;
 static struct omap_i2c_bus_board_data __initdata sdp4430_i2c_2_bus_pdata;
 static struct omap_i2c_bus_board_data __initdata sdp4430_i2c_3_bus_pdata;
 static struct omap_i2c_bus_board_data __initdata sdp4430_i2c_4_bus_pdata;
 
+/*
+ * LPDDR2 Configeration Data:
+ * The memory organisation is as below :
+ *	EMIF1 - CS0 -	2 Gb
+ *		CS1 -	2 Gb
+ *	EMIF2 - CS0 -	2 Gb
+ *		CS1 -	2 Gb
+ *	--------------------
+ *	TOTAL -		8 Gb
+ *
+ * Same devices installed on EMIF1 and EMIF2
+ */
+
+/*
+ * LPDDR2 Configeration Data:
+ * The memory organisation is as below :
+ *	EMIF1 - CS0 -	2 Gb
+ *	EMIF2 - CS0 -	2 Gb
+ *	--------------------
+ *	TOTAL -		4 Gb
+ *********************************
+ * LPDDR2 Configeration Data:
+ * The memory organisation is as below :
+ *	EMIF1 - CS0 -	4 Gb
+ *	EMIF2 - CS0 -	4 Gb
+ *	--------------------
+ *	TOTAL - 	8 Gb
+ *
+ * Same devices installed on EMIF1 and EMIF2
+ */
+#if 0
+static __initdata struct emif_device_details emif_devices = {
+	.cs0_device = &elpida_2G_S4,
+	.cs1_device = &elpida_2G_S4
+};
+#else
+#if defined (CONFIG_MACH_LGE_CX2) 
+static __initdata struct emif_device_details emif_devices = {
+	.cs0_device = &elpida_4G_S4,
+	.cs1_device = NULL
+};
+#else //cosmo case
 static __initdata struct emif_device_details emif_devices = {
 	.cs0_device = &elpida_2G_S2,
 	.cs1_device = NULL
 };
+#endif //CONFIG_MACH_LGE_CX2
+#endif //#if 0 
 
 static int __init omap_i2c_hwspinlock_init(int bus_id, unsigned int
 			spinlock_id, struct omap_i2c_bus_board_data *pdata)
@@ -1032,6 +1854,58 @@ static int __init omap4_i2c_init(void)
 }
 
 
+#if 0
+static void omap_prox_activate(int state)
+{
+	gpio_set_value(OMAP4_SFH7741_ENABLE_GPIO , state);
+}
+
+static int omap_prox_read(void)
+{
+	int proximity;
+	proximity = gpio_get_value(OMAP4_SFH7741_SENSOR_OUTPUT_GPIO);
+	return proximity;
+}
+
+static void omap_sfh7741prox_init(void)
+{
+	int  error;
+
+	error = gpio_request(OMAP4_SFH7741_SENSOR_OUTPUT_GPIO, "sfh7741");
+	if (error < 0) {
+		pr_err("%s: GPIO configuration failed: GPIO %d, error %d\n"
+			, __func__, OMAP4_SFH7741_SENSOR_OUTPUT_GPIO, error);
+		return ;
+	}
+
+	error = gpio_direction_input(OMAP4_SFH7741_SENSOR_OUTPUT_GPIO);
+	if (error < 0) {
+		pr_err("Proximity GPIO input configuration failed\n");
+		goto fail1;
+	}
+
+	error = gpio_request(OMAP4_SFH7741_ENABLE_GPIO, "sfh7741");
+	if (error < 0) {
+		pr_err("failed to request GPIO %d, error %d\n",
+			OMAP4_SFH7741_ENABLE_GPIO, error);
+		goto fail1;
+	}
+
+	error = gpio_direction_output(OMAP4_SFH7741_ENABLE_GPIO , 1);
+	if (error < 0) {
+		pr_err("%s: GPIO configuration failed: GPIO %d,\
+			error %d\n",__func__, OMAP4_SFH7741_ENABLE_GPIO, error);
+		goto fail3;
+	}
+	return;
+
+fail3:
+	gpio_free(OMAP4_SFH7741_ENABLE_GPIO);
+fail1:
+	gpio_free(OMAP4_SFH7741_SENSOR_OUTPUT_GPIO);
+}
+#endif
+
 #ifdef CONFIG_TIWLAN_SDIO
 static void pad_config(unsigned long pad_addr, u32 andmask, u32 ormask)
 {
@@ -1055,6 +1929,32 @@ static void pad_config(unsigned long pad_addr, u32 andmask, u32 ormask)
 
 void wlan_1283_config(void)
 {
+#if 0	/* JamesLee :: FEB17 */
+#if 1	// Alex
+	if (gpio_request(168, NULL) != 0)
+		printk(KERN_ERR "GPIO 168 request failed\n");
+		
+	gpio_direction_output(168, 0);
+
+    /* gpio_102    CONTROL_CORE_PAD0_C2C_DATA12_PAD1_C2C_DATA13 */
+
+    /* Should set (x is don't change):  xxxx xxxx xxx0 1x11 xxxx xxxx xxxx xxxx */
+    pad_config(0x4A100090, 0xFFEFFFFF, 0x000B0000); 
+
+    if (gpio_request(102, NULL) != 0)         //SDP4430_WIFI_PMENA_GPIO
+        printk(KERN_ERR "GPIO 102 request failed\n");
+
+    gpio_direction_output(102, 1);                  //SDP4430_WIFI_PMENA_GPIO
+
+    gpio_set_value(102, 1); 
+#else
+	pad_config(0x4A100078, 0xFFECFFFF, 0x00030000);
+	pad_config(0x4A10007C, 0xFFFFFFEF, 0x0000000B);
+	if (gpio_request(54, NULL) != 0)
+		printk(KERN_ERR "GPIO 54 request failed\n");
+	gpio_direction_output(54, 0);
+#endif
+#endif
 	return ;
 }
 #endif
@@ -1082,6 +1982,17 @@ static void __init cosmo_tdmb_spi_init(void)
 {
 	spi_register_board_info(hub_tdmb_spi_board_info, ARRAY_SIZE(hub_tdmb_spi_board_info));
 }
+#endif // LGE_FW_TDMB
+
+#if 0
+static void omap_cma3000accl_init(void)
+{
+	if (gpio_request(OMAP4_CMA3000ACCL_GPIO, "Accelerometer") < 0) {
+		pr_err("Accelerometer GPIO request failed\n");
+		return;
+	}
+	gpio_direction_input(OMAP4_CMA3000ACCL_GPIO);
+}
 #endif
 
 static void __init omap4_display_init(void)
@@ -1093,14 +2004,22 @@ static void __init omap4_display_init(void)
 	__raw_writel(dsimux, phymux_base+0x618);
 	dsimux = __raw_readl(phymux_base+0x618);
 
+#if	0	// by dongjin73.kim -- not required on Cosmopolitan
+	/* Panel Taal reset and backlight GPIO init */
+	//gpio_request(sdp4430_lcd_device.reset_gpio, "dsi1_en_gpio");
+	//gpio_direction_output(sdp4430_lcd_device.reset_gpio, 0);
+	int		ret	=	gpio_request(sdp4430_lcd2_device.reset_gpio, "dsi2_en_gpio");
+	gpio_direction_output(sdp4430_lcd2_device.reset_gpio, 0);
+#endif
+#if ! defined (CONFIG_MACH_LGE_CX2)
 	gpio_request(HDMI_GPIO_60 , "hdmi_gpio_60");
         gpio_request(HDMI_GPIO_41 , "hdmi_gpio_41");
         gpio_direction_output(HDMI_GPIO_60, 1);
         gpio_direction_output(HDMI_GPIO_41, 0);
+#endif
 }
 
-
-
+#if defined(CONFIG_OMAP_HSI)	
 /* OMAP4: HSI: PM: Enable Modem CAWAKE to issue wakeup events */
 
 /*
@@ -1132,7 +2051,7 @@ static void omap_4430hsi_pad_conf(void)
 	/* hsi1_acready */
 	omap_mux_init_signal("usbb1_ulpitll_nxt.hsi1_acready", \
 		OMAP_PIN_OUTPUT | \
-		OMAP_PIN_OFF_OUTPUT_LOW);
+		OMAP_OFF_EN);
 	/* hsi1_acwake */
 	omap_mux_init_signal("usbb1_ulpitll_dat0.hsi1_acwake", \
 		OMAP_PIN_OUTPUT | \
@@ -1149,8 +2068,50 @@ static void omap_4430hsi_pad_conf(void)
 	omap_mux_init_signal("usbb1_ulpitll_dat3.hsi1_caready", \
 		OMAP_PIN_INPUT | \
 		OMAP_PIN_OFF_NONE);
+
+	/* Disable IFX SPI configuration (set safe_mode) in kernel 
+		because uboot can not be replaced for GB upgrade */
+	
+	/* IPC_SRDY gpio_119 */
+	omap_mux_init_signal("abe_dmic_clk1.safe_mode", \
+		OMAP_PIN_INPUT_PULLDOWN | \
+		OMAP_MUX_MODE7);
+	/* IPC_MRDY gpio_120 */
+	omap_mux_init_signal("abe_dmic_din1.safe_mode", \
+		OMAP_PIN_INPUT_PULLDOWN | \
+		OMAP_MUX_MODE7);
+	/* MCSPI4_CLK */
+	omap_mux_init_signal("mcspi4_clk.safe_mode", \
+		OMAP_PIN_INPUT_PULLDOWN | \
+		OMAP_MUX_MODE7);
+	/* MCSPI4_SIMO */
+	omap_mux_init_signal("mcspi4_simo.safe_mode", \
+		OMAP_PIN_INPUT_PULLDOWN | \
+		OMAP_MUX_MODE7);
+	/* MCSPI4_SOMI */
+	omap_mux_init_signal("mcspi4_somi.safe_mode", \
+		OMAP_PIN_INPUT_PULLDOWN | \
+		OMAP_MUX_MODE7);
+	
 }
 
+static void ifx_mipi_hsi_init(void)
+{
+	pr_info("Modem MIPI-HSI detected");
+	
+	omap_4430hsi_pad_conf();
+
+	if (gpio_request(MODEM_GPIO_PWRON, "ifx pwron") < 0) {
+		printk(KERN_ERR "Can't get MODEM_PWRON GPIO\n");
+		return;
+	}
+
+	if (gpio_request(MODEM_GPIO_PWRON_SW, "ifx pwron sw") < 0) {
+		printk(KERN_ERR "Can't get MODEM_PWRON_SW GPIO\n");
+		return;
+	}
+}
+#endif
 
 static void enable_board_wakeup_source(void)
 {
@@ -1172,7 +2133,6 @@ static void enable_board_wakeup_source(void)
 	omap_mux_enable_wakeup("sys_nirq1");
 	omap_mux_enable_wakeup("sys_nirq2");
 
-
 #if defined(CONFIG_OMAP_HSI)	
 	/*
 	 * Enable IO daisy for HSI CAWAKE line, to be able to
@@ -1181,7 +2141,6 @@ static void enable_board_wakeup_source(void)
 	 */
 	omap_mux_enable_wakeup("usbb1_ulpitll_clk.hsi1_cawake");
 #endif
-
 
 }
 
@@ -1249,20 +2208,20 @@ static struct omap_volt_pmic_info omap_pmic_iva = {
 };
 
 static struct omap_volt_vc_data vc_config = {
-	.vdd0_on = 1350000,        /* 1.35v */
-	.vdd0_onlp = 1350000,      /* 1.35v */
+	.vdd0_on = 1375000,        /* 1.375v */
+	.vdd0_onlp = 1375000,      /* 1.375v */
 	.vdd0_ret = 837500,       /* 0.8375v */
 	.vdd0_off = 0,		/* 0 v */
-	.vdd1_on = 1100000,        /* 1.1v */
-	.vdd1_onlp = 1100000,      /* 1.1v */
+	.vdd1_on = 1300000,        /* 1.3v */
+	.vdd1_onlp = 1300000,      /* 1.3v */
 	.vdd1_ret = 837500,       /* 0.8375v */
 	.vdd1_off = 0,		/* 0 v */
-	.vdd2_on = 1100000,        /* 1.1v */
-	.vdd2_onlp = 1100000,      /* 1.1v */
+	.vdd2_on = 1200000,        /* 1.2v */
+	.vdd2_onlp = 1200000,      /* 1.2v */
 	.vdd2_ret = 837500,       /* .8375v */
 	.vdd2_off = 0,		/* 0 v */
 };
-#define CONFIG_SERIAL_OMAP_UART2_DMA 1
+#define CONFIG_SERIAL_OMAP_UART2_DMA 1		//dennis.oh 20110124 TI OPP patch
 
 static struct omap_uart_port_info omap_serial_platform_data[] = {
 	{
@@ -1281,8 +2240,8 @@ static struct omap_uart_port_info omap_serial_platform_data[] = {
 	{
 #if defined(CONFIG_SERIAL_OMAP_UART2_DMA)
 		.use_dma	= CONFIG_SERIAL_OMAP_UART2_DMA,
-		.dma_rx_buf_size = 4096,
-		.dma_rx_timeout	= 1,
+		.dma_rx_buf_size = 4096, // CONFIG_SERIAL_OMAP_UART2_RXDMA_BUFSIZE,			//dennis.oh 20110124 TI OPP patch
+		.dma_rx_timeout	= 1, //CONFIG_SERIAL_OMAP_UART2_RXDMA_TIMEOUT,				//dennis.oh 20110124 TI OPP patch
 #else
 		.use_dma	= 0,
 		.dma_rx_buf_size = 0,
@@ -1321,6 +2280,7 @@ static struct omap_uart_port_info omap_serial_platform_data[] = {
 		.flags		= 0
 	}
 };
+#if 1	/* JamesLee :: FEB17 */
 #ifdef CONFIG_OMAP_MUX
 static struct omap_board_mux board_mux[] __initdata = {
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
@@ -1328,42 +2288,88 @@ static struct omap_board_mux board_mux[] __initdata = {
 #else
 #define board_mux	NULL
 #endif
+#endif
 static void __init lge_cosmopolitan_init(void)
 {
 	int status;
+#if 1	/* JamesLee :: FEB17 */
 	int package = OMAP_PACKAGE_CBS;
 
 	if (omap_rev() == OMAP4430_REV_ES1_0)
 		package = OMAP_PACKAGE_CBL;
 	omap4_mux_init(board_mux, package);
+#endif
 	omap_emif_setup_device_details(&emif_devices, &emif_devices);
 	omap_init_emif_timings();
 
 	omap4_i2c_init();
+#if defined (CONFIG_MACH_LGE_CX2)
+	lge_add_i2c_gpio_device();
+#endif
 	omap4_display_init();
+	//omap_disp_led_init();
 	conn_board_init(); /* Added for FlexST */
+	#if defined (CONFIG_MACH_LGE_CX2)
+	omap_display_init(&cx2_dss_data);
+	#else
 	omap_display_init(&sdp4430_dss_data);
+	#endif
 	platform_add_devices(sdp4430_devices, ARRAY_SIZE(sdp4430_devices));
 	conn_add_plat_device(); /* Added for FlexST */
+//	omap_serial_init();
 	omap_serial_init(omap_serial_platform_data);
 	omap4_twl6030_hsmmc_init(mmc);
 
 #ifdef CONFIG_TIWLAN_SDIO
+#if 0
+	wlan_1283_config();
+#else	/* JamesLee :: FEB17 */
 	config_wlan_mux();
 #endif
-
-/* OMAP4: HSI: PM: Enable Modem CAWAKE to issue wakeup events */
-#if defined(CONFIG_OMAP_HSI)
-	pr_info("Modem MIPI-HSI detected");
-	omap_4430hsi_pad_conf();
 #endif
-	usb_musb_init(&musb_board_data);
 
-	spi_register_board_info(sdp4430_spi_board_info, ARRAY_SIZE(sdp4430_spi_board_info));
+	/* Power on the ULPI PHY */
+	#if 0
+	if (gpio_is_valid(OMAP4SDP_MDM_PWR_EN_GPIO)) {
+		/* FIXME: Assumes pad is muxed for GPIO mode */
+		gpio_request(OMAP4SDP_MDM_PWR_EN_GPIO, "USBB1 PHY VMDM_3V3");
+		gpio_direction_output(OMAP4SDP_MDM_PWR_EN_GPIO, 1);
+	}
+	#endif	
+
+#if defined(CONFIG_OMAP_HSI)
+	ifx_mipi_hsi_init();
+#endif
 	
+	//usb_uhhtll_init(&usbhs_pdata);
+	//usb_ehci_init();
+	//usb_ohci_init();
+	usb_musb_init(&musb_board_data);
+#if 0
+	status = omap4_keypad_initialization(&sdp4430_keypad_data);
+	if(status)
+		pr_err("Keypad initialization failed: %d\n", status);
+#endif
+#if 0
+	status = omap_ethernet_init();
+	if (status) {
+		pr_err("Ethernet initialization failed: %d\n", status);
+	} else {
+		sdp4430_spi_board_info[0].irq = gpio_to_irq(ETH_KS8851_IRQ);
+		spi_register_board_info(sdp4430_spi_board_info,
+				ARRAY_SIZE(sdp4430_spi_board_info));
+	}
+	omap_sfh7741prox_init();
+	omap_cma3000accl_init();
+#endif
+
+#ifdef CONFIG_SPI_IFX
+	spi_register_board_info(sdp4430_spi_board_info, ARRAY_SIZE(sdp4430_spi_board_info));
+#endif /* CONFIG_SPI_IFX */
+
 #ifdef LGE_FW_TDMB
 	cosmo_tdmb_spi_init();
-#endif
+#endif // LGE_FW_TDMB
 
 #ifdef CONFIG_SPI_IFX
 	ifx_n721_dev_init();

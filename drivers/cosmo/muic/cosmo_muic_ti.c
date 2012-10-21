@@ -53,6 +53,7 @@ void muic_init_ts5usba33402(TYPE_RESET reset)
 {
 	printk(KERN_INFO "[MUIC] muic_init_ts5usba33402()\n");
 
+	//atomic_set(&muic_charger_detected, 0); 
 		
 	if (reset == RESET) {
 		/* Clear default switch position (0x03=0x24) */
@@ -215,6 +216,7 @@ s32 muic_ts5usba33402_detect_accessory(s32 upon_irq)
 		printk(KERN_INFO "[MUIC] INT_STAT reading failed\n");
 		muic_path = MUIC_UNKNOWN;
 		charging_mode = muic_path;
+		//set_muic_charger_detected();
 
 		return ret;
 	}
@@ -289,6 +291,7 @@ s32 muic_ts5usba33402_detect_accessory(s32 upon_irq)
 		gpio_set_value(IFX_USB_VBUS_EN_GPIO, 0);
         printk(KERN_INFO "[MUIC] charging_ic_deactive()\n");
     }
+	//set_muic_charger_detected();
 	
 	return ret;
 } 

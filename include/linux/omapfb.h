@@ -65,7 +65,7 @@
 
 #ifdef LGE_FW_TDMB
 #define OMAPFB_SET_CCS_MATRIX	OMAP_IOW(70, struct omapfb_ccs)
-#endif
+#endif // LGE_FW_TDMB
 
 #define OMAPFB_CAPS_GENERIC_MASK	0x00000fff
 #define OMAPFB_CAPS_LCDC_MASK		0x00fff000
@@ -238,7 +238,7 @@ struct omapfb_ccs {
 	int16_t ccs[OMAPFB_CCS_SIZE];	/* 3x3 color coefficients */
 	int16_t bv[OMAPFB_BV_SIZE];	/* 1x3 bias vector */
 };
-#endif
+#endif // LGE_FW_TDMB
 
 #ifdef __KERNEL__
 

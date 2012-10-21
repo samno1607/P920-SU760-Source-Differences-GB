@@ -604,7 +604,7 @@ struct input_absinfo {
 
 #define KEY_CAMERA_FOCUS	0x210
 #define KEY_WPS_BUTTON		0x211	/* WiFi Protected Setup key */
-#define KEY_TESTMODE_UNLOCK 	0x212	//  Pattern_Unlock_ATCommand 
+
 #define BTN_TRIGGER_HAPPY		0x2c0
 #define BTN_TRIGGER_HAPPY1		0x2c0
 #define BTN_TRIGGER_HAPPY2		0x2c1

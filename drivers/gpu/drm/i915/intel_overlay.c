@@ -993,7 +993,7 @@ static int check_overlay_src(struct drm_device *dev,
 	if (IS_I830(dev) || IS_845G(dev))
 		stride_mask = 255;
 	else
-	stride_mask = 63;
+		stride_mask = 63;
 
 	if (rec->stride_Y & stride_mask || rec->stride_UV & stride_mask)
 		return -EINVAL;

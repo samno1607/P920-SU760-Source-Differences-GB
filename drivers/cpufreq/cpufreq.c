@@ -46,12 +46,10 @@ static DEFINE_PER_CPU(char[CPUFREQ_NAME_LEN], cpufreq_cpu_governor);
 #endif
 static DEFINE_SPINLOCK(cpufreq_driver_lock);
 
-
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void cpufreq_early_suspend( struct early_suspend *h );
 static void cpufreq_early_resume( struct early_suspend *h );
 #endif 
-
 
 /*
  * cpu_policy_rwsem is a per CPU reader-writer semaphore designed to cure
@@ -90,14 +88,12 @@ int lock_policy_rwsem_##mode						\
 	return 0;							\
 }
 
-
 #define HIGHFREQ 1
 #define LOWFREQ 2
 #define TRUE 1
 #define FALSE 0
 unsigned int max_policy = FALSE; 
 EXPORT_SYMBOL_GPL(max_policy); 
-
 
 lock_policy_rwsem(read, cpu);
 EXPORT_SYMBOL_GPL(lock_policy_rwsem_read);
@@ -128,14 +124,12 @@ static int __cpufreq_governor(struct cpufreq_policy *policy,
 static unsigned int __cpufreq_get(unsigned int cpu);
 static void handle_update(struct work_struct *work);
 
-
 static work_func_t handle_rollback(void *data);
 
 /* 
  * Timer resource for rollback of CPU boost feature 
  */
 static DECLARE_DELAYED_WORK(cpufreq_tom_rollbackwq, (work_func_t) handle_rollback);
-
 
 
 /**
@@ -390,7 +384,6 @@ void cpufreq_notify_transition(struct cpufreq_freqs *freqs, unsigned int state)
 }
 EXPORT_SYMBOL_GPL(cpufreq_notify_transition);
 
-
 /*********************************************************************
  *                   EARLY SUSPEND INTERFACE                          *
  *********************************************************************/
@@ -405,7 +398,6 @@ static void cpufreq_early_resume( struct early_suspend *h )
 	pr_info("cpufreq_early_resume!!!\n");
 }
 #endif 
-
 
 
 /*********************************************************************
@@ -532,13 +524,6 @@ static ssize_t store_##file_name					\
 store_one(scaling_min_freq, min);
 store_one(scaling_max_freq, max);
 
-
-/* Author : 
- * We need to add some code to use timer 
- * that restore frequency value after 0.5 second. 
- * Due to fast user activity, we boost CPU frequency 
- * for 0.5 second.
- */
 static ssize_t store_scaling_boost_freq(struct cpufreq_policy *policy, 
 		const char *buf, size_t count)
 {
@@ -579,7 +564,6 @@ static ssize_t show_scaling_boost_freq(struct cpufreq_policy *policy,
 {							
 	return sprintf(buf, "%u\n", policy->min);	
 }
-
 
 
 /**
@@ -769,9 +753,7 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
-
 cpufreq_freq_attr_rw(scaling_boost_freq);
-
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -1327,14 +1309,12 @@ static int cpufreq_remove_dev(struct sys_device *sys_dev)
 	return retval;
 }
 
-
 static work_func_t handle_rollback(void *data)
 {
 	dprintk("handle_rollback for cpu called\n");
 	cpufreq_rollback_policy();
 	return 0; 
 }
-
 
 static void handle_update(struct work_struct *work)
 {
@@ -1637,7 +1617,6 @@ int __cpufreq_driver_target(struct cpufreq_policy *policy,
 }
 EXPORT_SYMBOL_GPL(__cpufreq_driver_target);
 
-
 int cpufreq_driver_target_max_bycpuid(unsigned int cpu,
 			  unsigned int is_max)
 {
@@ -1675,7 +1654,6 @@ no_policy:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(cpufreq_driver_target_max_bycpuid);
-
 
 int cpufreq_driver_target(struct cpufreq_policy *policy,
 			  unsigned int target_freq,
@@ -1991,7 +1969,6 @@ no_policy:
 }
 EXPORT_SYMBOL(cpufreq_update_policy);
 
-
 /**
  *	cpufreq_rollback_policy- re-evaluate an existing cpufreq policy
  *	@cpu: CPU which shall be re-evaluated
@@ -2036,7 +2013,6 @@ no_policy:
 }
 
 EXPORT_SYMBOL(cpufreq_rollback_policy);
-
 
 static int __cpuinit cpufreq_cpu_callback(struct notifier_block *nfb,
 					unsigned long action, void *hcpu)
@@ -2141,7 +2117,6 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 		cpufreq_debug_enable_ratelimit();
 	}
 
-
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	if(cpufreq_driver != NULL) {
 		cpufreq_driver->cpufreq_early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
@@ -2150,7 +2125,6 @@ int cpufreq_register_driver(struct cpufreq_driver *driver_data)
 		register_early_suspend(&cpufreq_driver->cpufreq_early_suspend);
 	}
 #endif
-
 
 	return ret;
 }

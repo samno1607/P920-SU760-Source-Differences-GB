@@ -108,7 +108,10 @@ static int bma222_read(void *mlsl_handle,
 		       struct ext_slave_platform_data *pdata,
 		       unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 static struct ext_slave_descr bma222_descr = {
@@ -118,6 +121,7 @@ static struct ext_slave_descr bma222_descr = {
 	/*.resume           = */ bma222_resume,
 	/*.read             = */ bma222_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "bma222",
 	/*.type             = */ EXT_SLAVE_TYPE_ACCELEROMETER,
 	/*.id               = */ ACCEL_ID_BMA222,

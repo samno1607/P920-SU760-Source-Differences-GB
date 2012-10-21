@@ -140,9 +140,7 @@ int __init omap_mux_init_gpio(int gpio, int val)
 	return -ENODEV;
 }
 
-
 static int _omap_mux_init_signal(struct omap_mux_partition *partition,
-
 					const char *muxname, int val)
 {
 	struct omap_mux_entry *e;
@@ -206,9 +204,7 @@ static int _omap_mux_init_signal(struct omap_mux_partition *partition,
 	return -ENODEV;
 }
 
-
 u16 omap_mux_read_signal(const char *muxname)
-
 {
 	struct omap_mux_partition *partition;
 	struct omap_mux_entry *e;
@@ -268,7 +264,6 @@ int omap_mux_enable_wakeup(const char *muxname)
 	return 0;
 }
 
-
 int omap_mux_disable_wakeup(const char *muxname)
 {
 	u16 val;
@@ -281,10 +276,7 @@ int omap_mux_disable_wakeup(const char *muxname)
 	return 0;
 }
 
-
-
 int omap_mux_init_signal(const char *muxname, int val)
-
 
 {
 	struct omap_mux_partition *partition;
@@ -867,9 +859,7 @@ static void omap_mux_init_signals(struct omap_mux_partition *partition,
 {
 	omap_mux_set_cmdline_signals();
 	
-	
 	omap_mux_write_array(partition, board_mux); 
-	
 }
 
 #else

@@ -566,7 +566,6 @@ int hdmi_configure_audio_sample_freq(u32 sample_freq);
 int hdmi_configure_audio_sample_size(u32 sample_size);
 
 
-
 #define HDMI_IRQ_PLL_RECAL_INTR			0x80000000
 #define HDMI_IRQ_PLL_UNLOCK				0x40000000
 #define HDMI_IRQ_PLL_LOCK				0x20000000
@@ -602,7 +601,6 @@ bool HDMI_is_device_connected(void);
 //S3D switching
 int HDMI_S3D_VSI_set(struct hdmi_s3d_config *config);
 int HDMI_S3D_VSI_unset(void);
-
 
 #endif
 

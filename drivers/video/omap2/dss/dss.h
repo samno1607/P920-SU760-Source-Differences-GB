@@ -421,9 +421,7 @@ void dispc_lcd_enable_signal(bool enable);
 void dispc_pck_free_enable(bool enable);
 void dispc_enable_fifohandcheck(enum omap_channel channel, bool enable);
 
-
 int dispc_enable_gamma(enum omap_channel ch, u8 gamma);
-
 
 void dispc_set_lcd_size(enum omap_channel channel, u16 width, u16 height);
 #ifndef CONFIG_OMAP4_ES1
@@ -473,9 +471,7 @@ int dispc_setup_plane(enum omap_plane plane,
 
 bool dispc_go_busy(enum omap_channel channel);
 void dispc_go(enum omap_channel channel);
-
 void dispc_stop(enum omap_channel channel);
-
 void dispc_enable_digit_out(bool enable);
 void dispc_enable_channel(enum omap_channel channel, bool enable);
 bool dispc_is_channel_enabled(enum omap_channel channel);
@@ -526,7 +522,7 @@ int dispc_setup_wb(struct writeback_cache_data *wb);
 
 #ifdef LGE_FW_TDMB
 void dispc_set_ccs_matrix(struct omap_ccs_matrix * ccs_info);
-#endif
+#endif // LGE_FW_TDMB
 
 /* VENC */
 #ifdef CONFIG_OMAP2_DSS_VENC

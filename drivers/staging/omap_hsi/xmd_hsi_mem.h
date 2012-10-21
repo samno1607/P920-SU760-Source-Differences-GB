@@ -1,5 +1,5 @@
-/* 
- * arch/arm/mach-omap2/xmd_hsi_mem.h.h
+/*
+ * xmd_hsi_mem.h.h
  *
  * Copyright (C) 2011 Intel Mobile Communications. All rights reserved.
  *
@@ -12,66 +12,58 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details. 
+ * GNU General Public License for more details.
  *
  */
 
-#if !defined(MIPI_HSI_MEM__H)
-#define MIPI_HSI_MEM__H
-
+#if !defined(XMD_HSI_MEM__H)
+#define XMD_HSI_MEM__H
 
 /*****************************************************************************/
 /* INCLUDES                                                                  */
 /*****************************************************************************/
 
-
 /*****************************************************************************/
 /* DEFINES                                                                   */
 /*****************************************************************************/
+/*  If this is defined, preallocated buffers are used else memory is allocated
+	only when required by kmalloc.*/
+#define HSI_PRE_ALLOC_BUFFERS
 
+/*  If this is defined, preallocated mem is obtained from dma_alloc_coherent
+	else static pools are used. */
+#define HSI_MEM_USE_DMA_BUFS
 
-#define IFX_HSI_BUFFERS  //If this is defined, preallocated buffers are used else mem is allocated only when required.
-#define HSI_DMA_BUFFERS  //If this is defined, preallocated mem is obtained from dma_alloc_coherent else static pools are used.
+#define HSI_MEM_ENABLE_LOGS
 
-/* pool for dynamic mem allocation */
-#ifndef HSI_DMA_BUFFERS
-#define HSI_SMALL_BLOCK_SIZE               512
-#define HSI_MEDIUM_BLOCK_SIZE             (2*1024)
-#define HSI_LARGE_BLOCK_SIZE              ((32 * 1024))
-#else
-#define HSI_SMALL_BLOCK_SIZE               512
-#define HSI_MEDIUM_BLOCK_SIZE              2048
-#define HSI_LARGE_BLOCK_SIZE               16384
-#endif
+/* #define HSI_MEM_DEBUG */
 
-#define HSI_NUM_SMALL_BLOCKS          30
-#define HSI_NUM_MEDIUM_BLOCKS         15
-#define HSI_NUM_LARGE_BLOCKS          8
-#define HSI_NUM_FALLBACK_BLOCKS       32
+/*TODO: Fine tune below memory configuration as per requirement. */
 
+#define HSI_MEM_BLOCK0_SIZE    512
+#define HSI_MEM_BLOCK1_SIZE	 (1024*2)
+#define HSI_MEM_BLOCK2_SIZE	 (1024*8)
+#define HSI_MEM_BLOCK3_SIZE	 (1024*30)
 
-#define HSI_MEM_DEBUG                   0
-/* statistics */
-#define MEM_STAT_MIN_SIZE               16
-#define MEM_STAT_RANGE                  16
+#define HSI_MEM_LARGE_BLOCK_SIZE  HSI_MEM_BLOCK3_SIZE
 
+#define HSI_MEM_NUM_OF_BLK0		80
+#define HSI_MEM_NUM_OF_BLK1	 	80
+#define HSI_MEM_NUM_OF_BLK2	 	10
+#define HSI_MEM_NUM_OF_BLK3 	8
+#define HSI_MEM_NUM_OF_FB_BLK	120
 
 /*****************************************************************************/
 /* TYPE DEFINITIONS                                                          */
 /*****************************************************************************/
 
-
 /*****************************************************************************/
 /* PROTOTYPES                                                                */
 /*****************************************************************************/
-
-int mipi_hsi_mem_init(void);
-int mipi_hsi_mem_uninit(void);
-void* mipi_hsi_mem_alloc(int size);
-int mipi_hsi_mem_free(unsigned char* mem);
-
-
-
-#endif /* MIPI_HSI_MEM__H */
-
+int hsi_mem_init(void);
+int hsi_mem_uninit(void);
+int hsi_mem_reinit(void);
+void* hsi_mem_alloc(int size);
+void hsi_mem_free(void* ptr);
+#endif /* XMD_HSI_MEM__H */
 

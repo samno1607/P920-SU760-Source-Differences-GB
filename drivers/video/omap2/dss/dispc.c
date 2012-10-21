@@ -1180,7 +1180,6 @@ end:
 	enable_clocks(0);
 }
 
-
 void dispc_stop(enum omap_channel channel)
 {
 	int val, bit;
@@ -1219,7 +1218,6 @@ void dispc_stop(enum omap_channel channel)
 
 	enable_clocks(0);
 }
-
 
 static void _dispc_write_firh_reg(enum omap_plane plane, int reg, u32 value)
 {
@@ -1455,7 +1453,7 @@ void dispc_set_ccs_matrix(struct omap_ccs_matrix * ccs_info)
 	REG_FLD_MOD(DISPC_VID_ATTRIBUTES(0), 0, 11, 11);
 	REG_FLD_MOD(DISPC_VID_ATTRIBUTES(1), 0, 11, 11);
 }
-#endif
+#endif // LGE_FW_TDMB
 
 void dispc_setup_color_fr_lr(int range)
 {
@@ -1534,7 +1532,7 @@ static void _dispc_set_plane_ba_uv1(enum omap_plane plane, u32 paddr)
 	};
 
 	BUG_ON(plane == OMAP_DSS_GFX);
-
+//	if (plane >= 3) {
 	if (plane > 3) {
 		WARN_ON(1);
 		return;
@@ -1851,6 +1849,9 @@ void dispc_set_idle_mode(void)
 	/* Setting AUTOIDLE to 0 causes DSI
 	 * framedone timeouts on ES2.0
 	 */
+#if 0
+	l = FLD_MOD(l, 0, 0, 0);	/* AUTOIDLE */
+#endif
 	dispc_write_reg(DISPC_SYSCONFIG, l);
 
 }
@@ -1957,7 +1958,6 @@ void dispc_setup_plane_fifo(enum omap_plane plane, u32 low, u32 high)
 					   DISPC_VID_FIFO_THRESHOLD(0),
 					   DISPC_VID_FIFO_THRESHOLD(1) };
 	if (cpu_is_omap44xx()) {
-		
 		REG_FLD_MOD(dispc_reg_att[plane], 1, 19, 19);
 		//Enabling the Buffer Preload to use the FIFO Upper Threshold Jags_08_12_2010
 		ftrs_reg[3] = DISPC_VID_V3_WB_BUF_THRESHOLD(0);
@@ -2220,7 +2220,7 @@ static const s8 *get_scaling_coef(int orig_size, int out_size,
 	/* ranges from 2 to 32 */
 	int two_m = 16 * orig_size / out_size;
 
-	if (orig_size == out_size) return fir3_m8;    
+	if (orig_size == out_size) return fir3_m8;    // kh.kang@lge.com 5/9 bug fix
 
 	if (orig_size > 4 * out_size)
 		return fir5_zero;
@@ -3254,7 +3254,6 @@ static int _dispc_setup_plane(enum omap_plane plane,
 				screen_width, width, frame_height, color_mode,
 				fieldmode, field_offset,
 				&offset0, &offset1, &row_inc, &pix_inc);
-		
 		//INC BURST Type if not tiler
 		REG_FLD_MOD(dispc_reg_att[plane], 0x0, 29, 29);
 	} else if (rotation_type == OMAP_DSS_ROT_VRFB) {
@@ -3262,7 +3261,6 @@ static int _dispc_setup_plane(enum omap_plane plane,
 				screen_width, width, frame_height, color_mode,
 				fieldmode, field_offset,
 				&offset0, &offset1, &row_inc, &pix_inc);
-		
 		//INC BURST Type if not tiler
 		REG_FLD_MOD(dispc_reg_att[plane], 0x0, 29, 29);
 	}
@@ -3726,7 +3724,6 @@ bool dispc_trans_key_enabled(enum omap_channel ch)
 	return enabled;
 }
 
-
 int dispc_enable_gamma(enum omap_channel ch, u8 gamma)
 {
 #ifdef CONFIG_ARCH_OMAP4
@@ -3775,7 +3772,6 @@ int dispc_enable_gamma(enum omap_channel ch, u8 gamma)
         return 0;
 #endif
 }
-
 
 
 
@@ -5014,11 +5010,9 @@ static void _omap_dispc_initial_config(void)
 	dispc_set_loadmode(OMAP_DSS_LOAD_FRAME_ONLY);
 
 	dispc_read_plane_fifo_sizes();
-	
 	//Enabling the DISPC_DIVISOR and setting the LCD to 1, Jags_Dec_08_2010
 	REG_FLD_MOD(DISPC_DIVISOR1, 1, 0, 0);
 	REG_FLD_MOD(DISPC_DIVISOR1, 1, 23, 16);
-	
 }
 
 int dispc_init(struct platform_device *pdev)
@@ -5041,7 +5035,6 @@ int dispc_init(struct platform_device *pdev)
 		dispc_mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	else
 		dispc_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
 
 	if(!dispc_mem) return -ENOMEM;
 	dispc_base = dispc.base = ioremap(dispc_mem->start,

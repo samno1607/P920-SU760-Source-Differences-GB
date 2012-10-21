@@ -94,11 +94,11 @@ static DEVICE_ATTR(reset, S_IRUGO | S_IWUSR, gps_gpio_reset_show, gps_gpio_reset
 static DEVICE_ATTR(poweron, S_IRUGO | S_IWUSR, gps_gpio_poweron_show, gps_gpio_poweron_store);
 
 
-static int cosmo_gps_gpio_probe(struct platform_device *pdev)
+static int gps_gpio_probe(struct platform_device *pdev)
 {
 	int retval = 0;
 
-	printk(KERN_INFO "cosmo_gps_gpio_probe\n");
+	printk(KERN_INFO "gps_gpio_probe\n");
 
 	omap_mux_init_gpio(GPIO_GPS_PWR_ON,  OMAP_PIN_OUTPUT);
 	omap_mux_init_gpio(GPIO_GPS_RESET_N, OMAP_PIN_OUTPUT);
@@ -106,21 +106,21 @@ static int cosmo_gps_gpio_probe(struct platform_device *pdev)
 	retval = gpio_request(GPIO_GPS_PWR_ON,  "GPS power on GPIO");
 	if (retval)
 	{
-		printk(KERN_ERR "cosmo_gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_PWR_ON);
+		printk(KERN_ERR "gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_PWR_ON);
 		return retval;
 	}
 	
 	retval = gpio_request(GPIO_GPS_RESET_N, "GPS reset GPIO");
 	if (retval)
 	{
-		printk(KERN_ERR "cosmo_gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_RESET_N);
+		printk(KERN_ERR "gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_RESET_N);
 		return retval;
 	}
 
 		retval = gpio_request(GPIO_GPS_LNA_SD, "GPS extend LNA GPIO");
 		if (retval)
 		{
-			printk(KERN_ERR "cosmo_gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_LNA_SD);
+			printk(KERN_ERR "gps_gpio_probe: GPIO %d is already used!\n", GPIO_GPS_LNA_SD);
 			return retval;
 		}
 
@@ -135,7 +135,7 @@ static int cosmo_gps_gpio_probe(struct platform_device *pdev)
 	return 0;
 
 error:
-	printk(KERN_ERR "cosmo_gps_gpio_probe: Cannot create file desc.!\n");
+	printk(KERN_ERR "gps_gpio_probe: Cannot create file desc.!\n");
 	device_remove_file(&pdev->dev, &dev_attr_reset);
 	device_remove_file(&pdev->dev, &dev_attr_poweron);
 	
@@ -144,9 +144,9 @@ error:
 
 
 
-static int cosmo_gps_gpio_remove(struct platform_device *pdev)
+static int gps_gpio_remove(struct platform_device *pdev)
 {
-	printk(KERN_INFO "cosmo_gps_gpio_remove\n");
+	printk(KERN_INFO "gps_gpio_remove\n");
 	device_remove_file(&pdev->dev, &dev_attr_reset);
 	device_remove_file(&pdev->dev, &dev_attr_poweron);
 	return 0;
@@ -154,11 +154,11 @@ static int cosmo_gps_gpio_remove(struct platform_device *pdev)
 
 
 // platform_driver
-static struct platform_driver cosmo_gps_gpio_driver = {
-	.probe	= cosmo_gps_gpio_probe,
-	.remove	= cosmo_gps_gpio_remove,
+static struct platform_driver gps_gpio_driver = {
+	.probe	= gps_gpio_probe,
+	.remove	= gps_gpio_remove,
 	.driver	= {
-		.name   = "cosmo_gps_gpio",
+		.name   = "gps_gpio",
 		.owner  = THIS_MODULE
 	},
 };
@@ -167,13 +167,13 @@ static struct platform_driver cosmo_gps_gpio_driver = {
 static int __devinit gps_gpio_init(void)
 {
 	printk(KERN_INFO "gps_gpio_init\n");
-	return platform_driver_register(&cosmo_gps_gpio_driver);
+	return platform_driver_register(&gps_gpio_driver);
 }
 
 static void __exit gps_gpio_exit(void)
 {
 	printk(KERN_INFO "gps_gpio_exit\n");
-	platform_driver_unregister(&cosmo_gps_gpio_driver);
+	platform_driver_unregister(&gps_gpio_driver);
 }
 
 module_init(gps_gpio_init);

@@ -137,7 +137,6 @@ int max17043_reference_graph(int __x, battery_graph_prop* ref_battery_graph, int
 
 	__y = (__x* slope + const_term);
 
-	
 	if(error_range)
 	{
 		*error_range = slope * (FUEL_GAUGE_VOLT_ERROR_RANGE) / (*error_range);
@@ -199,12 +198,10 @@ int max17043_validate_gauge_value(int voltage, int capacity)
 	if( (capacity < calculated_soc + error_range) && (capacity > calculated_soc - error_range) )
 	{
 		D(" ##### SOC & CALCULATED SOC is met  ##########");
-		
 		return 1;
 	}
 
 	D(" ##### SOC & CALCULATED SOC is NOT met 1!!!  ##########");
-	
 	return 0;
 
 }
@@ -422,6 +419,48 @@ int max17043_i2c_write_word(u8 slave_addr, u8 index, u8 *buf)
 
 }
 
+#if 0
+void max17043_test(void)
+{
+	u8 buff_r[2];
+	u8 buff_w[2];
+	u32 i, j;
+
+	D("Start of max17043_test\n");
+	for(j = 0; j < 1000; j++) {
+		D("#%d\n", j);
+		for(i = 0; i < 16;) {
+		#if 0
+		//read version register
+		max17043_i2c_readbytes(FUEL_GAUGE_MAX17043_SLAVE_ID, 0x6, buff_r, 2);
+		D("version register 0x%04x 0x%04x \n", buff_r[0], buff_r[1]);
+		#endif
+
+		//read  config register
+		//max17043_i2c_readbytes(FUEL_GAUGE_MAX17043_SLAVE_ID, 0xc, buff_r, 2);
+		//D("before config register 0x%04x 0x%04x \n", buff_r[0], buff_r[1]);
+
+		//write config register
+		buff_w[0] = i++;
+		buff_w[1] = i++;
+		max17043_i2c_write_word(FUEL_GAUGE_MAX17043_SLAVE_ID, 0xc, buff_w);
+		//D("write config register \n");
+
+		//read config register
+		max17043_i2c_read_word(FUEL_GAUGE_MAX17043_SLAVE_ID, 0xc, buff_r);
+		//D("after config register 0x%04x 0x%04x \n", buff_r[0], buff_r[1]);
+		D("buff_w[0]= %x, buff_w[1]= %x, buff_r[0]=%x, buff_r[1]=%x",
+		buff_w[0], buff_w[1], buff_r[0], buff_r[1]);
+
+		if ((buff_w[0] != buff_r[0]) || (buff_w[1] != buff_r[1]))
+			D("I2C read write ERROR!!!!!!!i=%d, buff_r[0]=%d, buff_r[1]=%d\n",
+				i, buff_r[0], buff_r[1]);
+
+		}
+	}
+	D("End of max17043_test\n");
+}
+#endif
 
 static int max17043_write_reg(struct max17043_dev *max_dev, int reg, u16 value)
 {
@@ -445,7 +484,6 @@ static int max17043_write_reg(struct max17043_dev *max_dev, int reg, u16 value)
 		{
 			dev_err(&max_dev->pdev->dev, "%s: err %d\n", __func__, ret);
 			D("MAX17043 I2C WRITE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			
 			msleep(1);
 		}
 		else
@@ -477,7 +515,6 @@ static int max17043_read_reg(struct max17043_dev *max_dev, int reg)
 		{
 			dev_err(&max_dev->pdev->dev, "%s: err %d\n", __func__, ret);
 			D("MAX17043 I2C READ ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			
 			msleep(1);
 		}
 		else
@@ -814,7 +851,6 @@ static int max17043_update(void)
 	if(ret < 0)
 		return ret;
 
-	
 	ret = max17043_read_vcell(i2c_max17043_dev);
 	if(ret < 0)
 		return ret;
@@ -825,6 +861,11 @@ static int max17043_update(void)
 	/* convert raw data to usable data */
 	i2c_max17043_dev->voltage = (i2c_max17043_dev->vcell * 5) >> 2;	// vcell * 1.25 mV
 	i2c_max17043_dev->capacity = i2c_max17043_dev->soc >> 8;
+	// adjust full condition...just hack...
+/*
+	if(i2c_max17043_dev->soc & 0x80)	// half up
+		i2c_max17043_dev->capacity++;
+*/
 
 	if(i2c_max17043_dev->capacity > 100)
 		i2c_max17043_dev->capacity = 100;
@@ -887,6 +928,33 @@ static irqreturn_t max17043_interrupt_handler(int irq, void *data)
 #endif
 	return IRQ_HANDLED;
 }
+#if 0	// B-Project Does not use fuel gauge as a battery driver
+/* sysfs(power_supply) interface : for Android Battery Service [START] */
+static enum power_supply_property max17043_battery_props[] = {
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CAPACITY,
+};
+static int max17043_get_property(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val)
+{
+	struct max17043_dev *max_dev = container_of(psy,
+				struct max17043_dev, battery);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = max_dev->voltage;
+		break;
+	case POWER_SUPPLY_PROP_CAPACITY:
+		val->intval = max_dev->capacity;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+/* sysfs interface : for Android Battery Service [END] */
+#endif
 /* sysfs interface : for AT Commands [START] */
 ssize_t max17043_show_soc(struct device *dev,
 			 struct device_attribute *attr,
@@ -948,7 +1016,6 @@ ssize_t max17043_store_status(struct device *dev,
 }
 DEVICE_ATTR(state, 0664, max17043_show_status, max17043_store_status);
 /* sysfs interface : for AT Commands [END] */
-
 
 int max17043_get_ui_capacity(void)
 {
@@ -1175,6 +1242,10 @@ static int max17043_probe(struct platform_device *pdev)
 	max17043_read_version(max_dev);
 	max17043_read_config(max_dev);
 
+	//max17043_test();
+
+
+
 	INIT_DELAYED_WORK_DEFERRABLE(&i2c_max17043_dev->alert_work, max17043_alert_work);
 	INIT_DELAYED_WORK_DEFERRABLE(&i2c_max17043_dev->gauge_work, max17043_update_work);
 
@@ -1187,12 +1258,14 @@ static int max17043_probe(struct platform_device *pdev)
 		max17043_clear_interrupt(max_dev);
 	}
 
+	// sysfs path : /sys/devices/platform/i2c_omap.2/i2c-2/2-0036/soc
 	ret = device_create_file(&max_dev->pdev->dev, &dev_attr_soc);
 	if (ret < 0) {
 		pr_err("%s:File device creation failed: %d\n", __func__, ret);
 		ret = -ENODEV;
 		goto err_create_file_soc_failed;
 	}
+	// sysfs path : /sys/devices/platform/i2c_omap.2/i2c-2/2-0036/state
 	ret = device_create_file(&max_dev->pdev->dev, &dev_attr_state);
 	if (ret < 0) {
 		pr_err("%s:File device creation failed: %d\n", __func__, ret);

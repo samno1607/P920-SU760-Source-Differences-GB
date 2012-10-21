@@ -69,9 +69,11 @@ struct omap_uart_state {
 	u32 wk_mask;
 	u32 padconf;
 	u32 dma_enabled;
+//dennis.oh 20110124 TI OPP patch [start]
 	u32 rts_padconf;
 	int rts_override;
 	u16 rts_padvalue;
+//dennis.oh 20110124 TI OPP patch [end]
 	struct clk *ick;
 	struct clk *fck;
 	int clocked;
@@ -97,10 +99,12 @@ struct omap_uart_state {
 	u16 scr;
 	u16 wer;
 	u16 mcr;
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 	u16 mdr3;
 	u16 dma_thresh;
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 #endif
 };
 
@@ -228,6 +232,7 @@ static void omap_uart_save_context(struct omap_uart_state *uart)
 	uart->mcr = serial_read_reg(uart, UART_MCR);
 	serial_write_reg(uart, UART_LCR, lcr);
 
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 	/* HACK to reset UART module if DMA is enabled
 	 * For some reason if DMA is enabled the module is
@@ -239,6 +244,7 @@ static void omap_uart_save_context(struct omap_uart_state *uart)
 		serial_write_reg(uart, UART_OMAP_SYSC, 0x2);
 	}
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 	uart->context_valid = 1;
 }
 
@@ -275,6 +281,7 @@ static void omap_uart_restore_context(struct omap_uart_state *uart)
 	serial_write_reg(uart, UART_IER, uart->ier);
 	/* Enable FiFo and Trig Threshold */
 
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 	if (uart->dma_enabled)
 		serial_write_reg(uart, UART_FCR, 0x59);
@@ -283,6 +290,7 @@ static void omap_uart_restore_context(struct omap_uart_state *uart)
 #else
 		serial_write_reg(uart, UART_FCR, 0x51);
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 
 	serial_write_reg(uart, UART_LCR, OMAP_UART_LCR_CONF_MDA);
 	serial_write_reg(uart, UART_MCR, uart->mcr);
@@ -294,12 +302,14 @@ static void omap_uart_restore_context(struct omap_uart_state *uart)
 	serial_write_reg(uart, UART_OMAP_WER, uart->wer);
 	serial_write_reg(uart, UART_OMAP_SYSC, uart->sysc);
 
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 	if (uart->dma_enabled && cpu_is_omap44xx()) {
 		serial_write_reg(uart, UART_TX_DMA_THRESHOLD, uart->dma_thresh);
 		serial_write_reg(uart, UART_MDR3, uart->mdr3);
 	}
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 
 	if (uart->dma_enabled)
 		omap_uart_mdr1_errataset(uart->num, 0x00, 0x59);
@@ -450,7 +460,7 @@ void omap_uart_prepare_idle(int num)
 
 	list_for_each_entry(uart, &uart_list, node) {
 		if (num == uart->num && uart->can_sleep) {
-			omap_uart_enable_rtspullup(uart);
+			omap_uart_enable_rtspullup(uart);			//dennis.oh 20110124 TI OPP patch
 			omap_uart_disable_clocks(uart);
 			return;
 		}
@@ -460,6 +470,7 @@ void omap_uart_prepare_idle(int num)
 void omap_uart_resume_idle(int num)
 {
 	struct omap_uart_state *uart;
+	//dennis.oh 20110124 TI OPP patch [start]
 	list_for_each_entry(uart, &uart_list, node) {
 		if (num == uart->num) {
 			omap_uart_enable_clocks(uart);
@@ -487,6 +498,7 @@ void omap_uart_resume_idle(int num)
 			return;
 		}
 	}
+	//dennis.oh 20110124 TI OPP patch [end]
 }
 
 void omap_uart_prepare_suspend(void)
@@ -559,6 +571,7 @@ void omap_uart_enable_clock_from_irq(int uart_num)
 }
 EXPORT_SYMBOL(omap_uart_enable_clock_from_irq);
 
+//dennis.oh 20110124 TI OPP patch [start]
 static void omap_uart_rtspad_init(struct omap_uart_state *uart)
 {
 	if (!cpu_is_omap44xx())
@@ -575,6 +588,7 @@ static void omap_uart_rtspad_init(struct omap_uart_state *uart)
 		break;
 	}
 }
+//dennis.oh 20110124 TI OPP patch [end]
 
 static void omap_uart_idle_init(struct omap_uart_state *uart)
 {
@@ -643,13 +657,19 @@ static void omap_uart_idle_init(struct omap_uart_state *uart)
 			uart->padconf = 0x4A1000E4;
 			break;
 		case 1:
-			uart->padconf = 0x4A100118;
+			uart->padconf = 0x4A100118; // 0x4A10011C;			//dennis.oh 2011-02-10 bt sleep [start]
+
+//			omap_writew(0x4100, 0x4A100118); // set uart2_cts
+//			omap_writel(omap_readl(0x4806C054) | 0x00000004, 0x4806C054); // set uart2_wakeup_enable
+
 			break;
 		case 2:
 			uart->padconf = 0x4A100144;
 			break;
 		case 3:
 			uart->padconf = 0x4A10015C;
+			//printk("omap_uart_idle_init [%x]\n", omap_readl(0x4A10015C));
+			omap_writel(omap_readl(0x4A10015C) | 0x00180018, 0x4A10015C); // [20110728:geayoung.baek]UART 4 Pull up enable			
 			break;
 		}
 	}
@@ -885,19 +905,21 @@ void __init omap_serial_init_port(int port,
 	omap_up.dma_rx_buf_size = platform_data->dma_rx_buf_size;
 	omap_up.dma_rx_timeout = platform_data->dma_rx_timeout;
 
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 	if (omap_up.use_dma) {
 		if (cpu_is_omap44xx() && (omap_rev() > OMAP4430_REV_ES1_0))
 			omap_up.omap4_tx_threshold = true;
 	}
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 
 	omap_up.uartclk = OMAP24XX_BASE_BAUD * 16;
 	omap_up.mapbase = uart->mapbase;
 	omap_up.membase = uart->membase;
 	omap_up.irqflags = IRQF_SHARED;
 	omap_up.flags = UPF_BOOT_AUTOCONF | UPF_SHARE_IRQ;
-	omap_up.idle_timeout = (platform_data->idle_timeout * HZ);
+	omap_up.idle_timeout = (platform_data->idle_timeout * HZ);		//dennis.oh 20110124 TI OPP patch 
 
 	pdata = &omap_up;
 	pdata_size = sizeof(struct omap_uart_port_info);
@@ -921,7 +943,7 @@ void __init omap_serial_init_port(int port,
 #endif
 
 	omap_uart_enable_clocks(uart);
-	omap_uart_rtspad_init(uart);
+	omap_uart_rtspad_init(uart);	//dennis.oh 20110124 TI OPP patch
 	omap_uart_idle_init(uart);
 	omap_uart_reset(uart);
 	omap_uart_disable_clocks(uart);
@@ -934,7 +956,7 @@ void __init omap_serial_init_port(int port,
 	 */
 	uart->timeout = (30 * HZ);
 	omap_uart_block_sleep(uart);
-	uart->timeout = (platform_data->idle_timeout * HZ);
+	uart->timeout = (platform_data->idle_timeout * HZ);			//dennis.oh 20110124 TI OPP patch 
 
 	if (((cpu_is_omap34xx() || cpu_is_omap44xx())
 		 && uart->padconf) ||

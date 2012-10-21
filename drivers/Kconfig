@@ -119,6 +119,10 @@ source "drivers/platform/Kconfig"
 
 source "drivers/dsp/syslink/Kconfig"
 
+source "drivers/nfc/Kconfig"
+
+# LGE_FW_TDMB
 source "drivers/broadcast/Kconfig"
+# LGE_FW_TDMB
 
 endmenu

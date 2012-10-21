@@ -82,17 +82,22 @@ static int sdp4430_mcpdm_hw_params(struct snd_pcm_substream *substream,
 
 	fe_id = rtd->current_fe;
 
-	if (twl6040_power_mode) {
+	if ( 1/*fe_id != ABE_FRONTEND_DAI_LP_MEDIA*/ ) {
+		printk(KERN_ERR "HP MODE!!\n");		
 		clk_id = TWL6040_SYSCLK_SEL_HPPLL;
 		freq = 38400000;
+		/* set the codec mclk */
+		ret = snd_soc_dai_set_sysclk(codec_dai, clk_id, freq,
+			SND_SOC_CLOCK_IN);
 	} else {
+		printk(KERN_ERR "LP MODE!!\n");
 		clk_id = TWL6040_SYSCLK_SEL_LPPLL;
 		freq = 32768;
+		/* set the codec mclk */
+		ret = snd_soc_dai_set_sysclk(codec_dai, clk_id, freq,
+			SND_SOC_CLOCK_IN);
 	}
-
-	/* set the codec mclk */
-	ret = snd_soc_dai_set_sysclk(codec_dai, clk_id, freq,
-				SND_SOC_CLOCK_IN);
+	
 	if (ret) {
 		printk(KERN_ERR "can't set codec system clock\n");
 		return ret;

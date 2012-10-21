@@ -16,11 +16,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
   $
  */
-/******************************************************************************
- *
- * $Id: mltypes.h 4598 2011-01-25 19:33:13Z prao $
- *
- *****************************************************************************/
 
 /**
  *  @defgroup MLERROR
@@ -94,11 +89,12 @@
 ---------------------------*/
 
 /**
- * @struct tMLError The MPL Error Code return type.
+ *  @struct tMLError mltypes.h "mltypes"
+ *  @brief  The MPL Error Code return type.
  *
- * @code
+ *  @code
  *      typedef unsigned char tMLError;
- * @endcode
+ *  @endcode
  */
 typedef unsigned char tMLError;
 
@@ -212,6 +208,12 @@ typedef int_fast8_t bool;
 #define ML_ERROR_CALIBRATION_STORE      (76)
 #define ML_ERROR_CALIBRATION_LEN        (77)
 #define ML_ERROR_CALIBRATION_CHECKSUM   (78)
+
+/* Accel errors */
+#define ML_ERROR_ACCEL_DATA_OVERFLOW    (79)
+#define ML_ERROR_ACCEL_DATA_UNDERFLOW   (80)
+#define ML_ERROR_ACCEL_DATA_NOT_READY   (81)
+#define ML_ERROR_ACCEL_DATA_ERROR       (82)
 
 /* For Linux coding compliance */
 #ifndef __KERNEL__

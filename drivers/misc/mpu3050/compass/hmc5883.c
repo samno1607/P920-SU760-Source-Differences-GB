@@ -233,6 +233,7 @@ struct ext_slave_descr hmc5883_descr = {
 	/*.resume           = */ hmc5883_resume,
 	/*.read             = */ hmc5883_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "hmc5883",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_HMC5883,

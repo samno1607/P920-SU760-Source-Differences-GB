@@ -297,6 +297,12 @@ static int abe_fe_startup(struct snd_pcm_substream *substream,
 	int ret = 0;
 
 	/* TODO: complete HW  pcm for backends */
+#if 0
+	snd_pcm_hw_constraint_list(substream->runtime, 0,
+				SNDRV_PCM_HW_PARAM_RATE,
+				priv->sysclk_constraints);
+#endif
+
 	if (dai->id == ABE_FRONTEND_DAI_MODEM) {
 
 		ret = modem_get_dai(substream);
@@ -446,6 +452,7 @@ static int abe_fe_hw_params(struct snd_pcm_substream *substream,
 			dma_params.iter;
 
 	if (dai->id == ABE_FRONTEND_DAI_MODEM) {
+		// patched 20101130(call sound)
 		ret = snd_soc_dai_set_fmt(abe_data.modem_dai,
 					  SND_SOC_DAIFMT_I2S |
 					  SND_SOC_DAIFMT_NB_NF |
@@ -1076,8 +1083,22 @@ static void enable_be_ports(struct snd_pcm_substream *substream, int stream)
 
 		switch (be_rtd->dai_link->be_id) {
 		case OMAP_ABE_DAI_PDM_DL1:
+#if 0			
+			if (trigger_is_pending(be_rtd, stream) &&
+			    pdm_ready(&abe_data))
+				abe_dai_enable_data_transfer(PDM_DL_PORT);
+			abe_data.pdm_dl_status[0] = DAI_STARTED;
+			abe_data.pdm_dl_ref_cnt[0]++;
+#endif			
 			break;
 		case OMAP_ABE_DAI_PDM_DL2:
+#if 0			
+			if (trigger_is_pending(be_rtd, stream) &&
+			    pdm_ready(&abe_data))
+				abe_dai_enable_data_transfer(PDM_DL_PORT);
+			abe_data.pdm_dl_status[1] = DAI_STARTED;
+			abe_data.pdm_dl_ref_cnt[1]++;
+#endif			
 			break;
 		case OMAP_ABE_DAI_PDM_VIB:
 			if (trigger_is_pending(be_rtd, stream) &&
@@ -1087,6 +1108,13 @@ static void enable_be_ports(struct snd_pcm_substream *substream, int stream)
 			abe_data.pdm_dl_ref_cnt[2]++;
 			break;
 		case OMAP_ABE_DAI_PDM_UL:
+#if 0			
+			if (trigger_is_pending(be_rtd, stream)) {
+				abe_dai_enable_data_transfer(PDM_UL_PORT);
+			}
+			abe_data.pdm_ul_status = DAI_STARTED;
+			abe_data.pdm_ul_ref_cnt++;
+#endif
 			break;
 		case OMAP_ABE_DAI_BT_VX:
 			if (trigger_is_pending(be_rtd, stream)) {
@@ -1209,8 +1237,34 @@ static void disable_be_ports(struct snd_pcm_substream *substream, int stream)
 		// TODO: main port active logic will be moved into HAL
 		switch (be_rtd->dai_link->be_id) {
 		case OMAP_ABE_DAI_PDM_DL1:
+#if 0			
+			abe_data.pdm_dl_status[0] = DAI_STOPPED;
+			abe_data.pdm_dl_ref_cnt[0]--;
+			if ( 1
+				&& trigger_is_pending(be_rtd, stream) 
+				&& pdm_ready(&abe_data) 
+				&& abe_data.pdm_dl_ref_cnt[0] == 0 
+				&& abe_data.pdm_dl_ref_cnt[1] == 0 
+				&& abe_data.pdm_dl_ref_cnt[2] == 0 
+			) {
+				abe_dai_disable_data_transfer(PDM_DL_PORT);
+			}
+#endif			
 			break;
 		case OMAP_ABE_DAI_PDM_DL2:
+#if 0			
+			abe_data.pdm_dl_status[1] = DAI_STOPPED;
+			abe_data.pdm_dl_ref_cnt[1]--;
+			if ( 1
+				&& trigger_is_pending(be_rtd, stream) 
+				&& pdm_ready(&abe_data) 
+				&& abe_data.pdm_dl_ref_cnt[0] == 0 
+				&& abe_data.pdm_dl_ref_cnt[1] == 0 
+				&& abe_data.pdm_dl_ref_cnt[2] == 0 
+			) {
+				abe_dai_disable_data_transfer(PDM_DL_PORT);
+			}
+#endif			
 			break;
 		case OMAP_ABE_DAI_PDM_VIB:
 			abe_data.pdm_dl_status[2] = DAI_STOPPED;
@@ -1225,6 +1279,13 @@ static void disable_be_ports(struct snd_pcm_substream *substream, int stream)
 				abe_dai_disable_data_transfer(PDM_VIB_PORT);
 			break;
 		case OMAP_ABE_DAI_PDM_UL:
+#if 0			
+			abe_data.pdm_ul_ref_cnt--;
+			abe_data.pdm_ul_status = DAI_STOPPED;
+			if (be_is_pending(be_rtd, stream) && abe_data.pdm_ul_ref_cnt == 0 ) {
+				abe_dai_disable_data_transfer(PDM_UL_PORT);
+			}
+#endif
 			break;
 		case OMAP_ABE_DAI_BT_VX:
 			if (trigger_is_pending(be_rtd, stream)) {
@@ -1580,7 +1641,7 @@ static struct snd_soc_dai_driver omap_abe_dai[] = {
 			.stream_name = "MultiMedia1 Playback",
 			.channels_min = 1,
 			.channels_max = 2,
-			.rates = SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000,
+			.rates = SNDRV_PCM_RATE_48000,
 			.formats = OMAP_ABE_FORMATS,
 		},
 		.capture = {

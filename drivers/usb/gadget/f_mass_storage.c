@@ -1214,6 +1214,7 @@ static int do_inquiry(struct fsg_common *common, struct fsg_buffhd *bh)
 	buf[6] = 0;
 	buf[7] = 0;
 	memcpy(buf + 8, curlun->inquiry_string, sizeof curlun->inquiry_string);
+//	memcpy(buf + 8, common->inquiry_string, sizeof common->inquiry_string);
 	return 36;
 }
 
@@ -1240,6 +1241,12 @@ static int do_request_sense(struct fsg_common *common, struct fsg_buffhd *bh)
 	 *
 	 * FSG normally uses option a); enable this code to use option b).
 	 */
+#if 0
+	if (curlun && curlun->unit_attention_data != SS_NO_SENSE) {
+		curlun->sense_data = curlun->unit_attention_data;
+		curlun->unit_attention_data = SS_NO_SENSE;
+	}
+#endif
 
 	if (!curlun) {		/* Unsupported LUNs are okay */
 		common->bad_lun_okay = 1;
@@ -1744,6 +1751,14 @@ static int finish_reply(struct fsg_common *common)
 		 * bulk-out packets, in which case the host wouldn't see a
 		 * STALL.  Not realizing the endpoint was halted, it wouldn't
 		 * clear the halt -- leading to problems later on. */
+#if 0
+		} else if (common->can_stall) {
+			if (fsg_is_set(common))
+				fsg_set_halt(common->fsg,
+					     common->fsg->bulk_out);
+			raise_exception(common, FSG_STATE_ABORT_BULK_OUT);
+			rc = -EINTR;
+#endif
 
 		/* We can't stall.  Read in the excess data and throw it
 		 * all away. */
@@ -1881,6 +1896,13 @@ static int check_command(struct fsg_common *common, int cmnd_size,
 			return -EINVAL;
 		}
 	}
+
+#if 0
+	/* Check that the LUN values are consistent */
+	if (common->lun != lun)
+		DBG(common, "using LUN %d from CBW, not LUN %d from CDB\n",
+		    common->lun, lun);
+#endif
 
 	/* Check the LUN */
 	if (common->lun >= 0 && common->lun < common->nluns) {
@@ -2871,6 +2893,17 @@ buffhds_first_it:
 			i = 0x0399;
 		}
 	}
+#if 0
+#define OR(x, y) ((x) ? (x) : (y))
+	snprintf(common->inquiry_string, sizeof common->inquiry_string,
+		 "%-8s%-16s%04x",
+		 OR(cfg->vendor_name, "Linux   "),
+		 /* Assume product name dependent on the first LUN */
+		 OR(cfg->product_name, common->luns->cdrom
+				     ? "File-Stor Gadget"
+				     : "File-CD Gadget  "),
+		 i);
+#endif 
 
 	/* Some peripheral controllers are known not to be able to
 	 * halt bulk endpoints correctly.  If one of them is present,

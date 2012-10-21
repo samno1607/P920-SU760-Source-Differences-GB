@@ -516,11 +516,11 @@ static int exact_lock(dev_t devt, void *data)
  
 
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH	  
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	  //FW KIMBYUNGCHUL 20110516 [START]
 int add_disk(struct gendisk *disk)
 #else
 void add_disk(struct gendisk *disk)
-#endif					
+#endif								  //FW KIMBYUNGCHUL 20110516 [END]
 {
 	struct backing_dev_info *bdi;
 	dev_t devt;
@@ -550,7 +550,7 @@ void add_disk(struct gendisk *disk)
 
 	blk_register_region(disk_devt(disk), disk->minors, NULL,
 			    exact_match, exact_lock, disk);
-  #ifdef CONFIG_MACH_LGE_MMC_REFRESH	  
+  #ifdef CONFIG_MACH_LGE_MMC_REFRESH	  //FW KIMBYUNGCHUL 20110516 [START]
 
 	if(register_disk(disk)==0xbcbc)
 	{

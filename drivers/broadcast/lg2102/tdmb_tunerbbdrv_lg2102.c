@@ -64,7 +64,7 @@ typedef enum	lg2102_service_type
 	LG2102_DMB = 2,
 	LG2102_VISUAL =3,
 	LG2102_DATA = 4,
-	LG2102_ENSQUERY = 6,
+	LG2102_ENSQUERY = 6,	/* LGE Added */
 	LG2102_SERVICE_MAX
 } lg2102_service_type;
 
@@ -90,6 +90,9 @@ static uint16			data_sequence_count = 0;
 /*============================================================
 **    8.   Local Function Prototype
 *============================================================*/
+#if 0
+static void print_msc_ber_scan(boolean bnormal);
+#endif
 int8 tunerbb_drv_lg2102_multi_set_channel(int32 freq_num, uint8 subch_cnt, uint8 subch_id[], uint8 op_mode[]);
 
 int8 tunerbb_drv_lg2102_power_on(void)
@@ -689,3 +692,26 @@ void tunerbb_drv_lg2102_set_userstop(void)
 {
 	tdmb_lg2102_set_userstop( );
 }
+
+#if 0
+static void print_msc_ber_scan(boolean bnormal)
+{
+	/* For Debugging */
+	/* ---------------------------------------*/
+	unsigned short msc_ber;
+
+	msc_ber = INTERFACE_GET_CER(TDMB_RFBB_DEV_ADDR);;
+
+	if(bnormal)
+	{
+		printk("[LGD] ^___^ Channel Search msc_ber = (%d)", msc_ber);
+	}
+	else
+	{
+		printk("[LGD] ^___^ Channel Search  but get FIC Data msc_ber = (%d)", msc_ber);
+
+	}
+}
+#endif
+
+

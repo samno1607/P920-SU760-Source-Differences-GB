@@ -55,6 +55,17 @@
 #endif
 
 
+#if 0
+typedef enum {
+	CHARGING_IC_DEACTIVE,    		/* 0  */
+	CHARGING_IC_ACTIVE_DEFAULT,
+	CHARGING_IC_TA_MODE,
+	CHARGING_IC_FACTROY_MODE,
+
+	CHARGING_IC_MAX_MODE			/* 4  */
+}charger_status;
+#endif
+
 typedef enum {
 	FACTORY_CHARGER_ENABLE,
 	FACTORY_CHARGER_DISABLE,
@@ -81,6 +92,31 @@ typedef enum {
 }charger_logo_state_t;
 
 
+/*/this code should be included from muic.h  until then this code remains.
+typedef enum {
+	MUIC_UNKNOWN,       // 0 - Error in detection or unsupported accessory.
+	MUIC_NONE,      // 1 - No accessory is plugged in.
+	MUIC_NA_TA,     // 2 - Not used actually. Special TA for North America.
+	MUIC_LG_TA,     // 3
+	MUIC_HCHH,      // 4 - Not used actually.
+	MUIC_INVALID_CHG,   // 5
+	MUIC_AP_UART,       // 6
+	MUIC_CP_UART,       // 7
+	MUIC_AP_USB,        // 8
+	MUIC_CP_USB,        // 9 - Not defined yet.
+	MUIC_TV_OUT_NO_LOAD,    // 10 - Not used.
+	MUIC_EARMIC,        // 11
+	MUIC_TV_OUT_LOAD,   // 12 - Not used.
+	MUIC_OTG,       // 13 - Not used.
+	MUIC_RESERVE1,      // 14
+	MUIC_RESERVE2,      // 15
+	MUIC_RESERVE3,      // 16
+	MUIC_MODE_NO,       // 17
+}TYPE_MUIC_MODE;
+//this code should be included from muic.h  until then this code remains.
+*/
+
+
 /* Function Prototype */
 
 enum power_supply_type get_charging_ic_status(void);
@@ -98,7 +134,6 @@ typedef enum {
 	CHARG_FSM_CAUSE_CHARGING_TIMER_EXPIRED,
 }charger_fsm_cause;
 void charger_fsm(charger_fsm_cause reason);
-
 
 int twl6030battery_temperature(void);
 int get_bat_soc(void);

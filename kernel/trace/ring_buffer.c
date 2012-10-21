@@ -1542,9 +1542,11 @@ static void rb_inc_iter(struct ring_buffer_iter *iter)
 	else
 		rb_inc_page(cpu_buffer, &iter->head_page);
 
+// CHEOLGWAK  2011-3-11 WBT
 	/* In case of error, reader will be NULL */
 	if (unlikely(!iter->head_page))
 		return ;
+// CHEOLGWAK  2011-3-11 WBT
 
 	iter->read_stamp = iter->head_page->page->time_stamp;
 	iter->head = 0;
@@ -2919,9 +2921,11 @@ rb_get_reader_page(struct ring_buffer_per_cpu *cpu_buffer)
 	cpu_buffer->reader_page->list.next = rb_list_head(reader->list.next);
 	cpu_buffer->reader_page->list.prev = reader->list.prev;
 	
+// CHEOLGWAK  2011-3-11 WBT
 	/* In case of error, reader will be NULL */
 	if (unlikely(!reader))
 		return NULL;
+// CHEOLGWAK  2011-3-11 WBT
 
 	/*
 	 * cpu_buffer->pages just needs to point to the buffer, it

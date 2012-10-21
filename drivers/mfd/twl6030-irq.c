@@ -253,6 +253,46 @@ int twl6030_mmc_no_card(void)
 			twl_i2c_write_u8(0x0D, 0x00, 0x99);
 			twl_i2c_write_u8(0x0D, 0x00, 0x9A);
 	
+#if 0
+
+	int ret;
+	u8 reg_val = 0;
+
+
+	/*
+	 * Intially Configuring MMC_CTRL for receving interrupts &
+	 * Card status on TWL6030 for MMC1
+	 */
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		pr_err("twl6030: Failed to read MMCCTRL, error %d\n", ret);
+		return ret;
+	}
+	//reg_val &= ~VMMC_AUTO_OFF;	//ORG
+	reg_val |= VMMC_AUTO_OFF;	//MOD
+
+	
+#ifndef CONFIG_MACH_LGE_MMC_COVER
+	reg_val |= SW_FC;
+#else
+	reg_val |= SW_FC;			//MOD
+
+	//reg_val &= ~SW_FC;
+#endif
+
+
+	ret = twl_i2c_write_u8(TWL6030_MODULE_ID0, reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		return ret;
+		pr_err("twl6030: Failed to write MMCCTRL, error %d\n", ret);
+	}
+
+	reg_val=0;
+
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val, TWL6030_MMCCTRL);
+	printk("[KIMBC] >>>>>>>>>>>>>>>>>> 0x%x \n",reg_val);
+
+#endif
 	return 0;
 }
 
@@ -263,6 +303,43 @@ int twl6030_mmc_ok_card(void)
 		twl_i2c_write_u8(0x0D, 0x01, 0x99);
 		twl_i2c_write_u8(0x0D, 0x21, 0x9A);
 
+#if 0
+	int ret;
+	u8 reg_val = 0;
+
+
+	/*
+	 * Intially Configuring MMC_CTRL for receving interrupts &
+	 * Card status on TWL6030 for MMC1
+	 */
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		pr_err("twl6030: Failed to read MMCCTRL, error %d\n", ret);
+		return ret;
+	}
+	reg_val &= ~VMMC_AUTO_OFF;	//ORG
+	//reg_val |= VMMC_AUTO_OFF;	//MOD
+
+	
+#ifndef CONFIG_MACH_LGE_MMC_COVER
+	reg_val |= SW_FC;
+#else
+	//reg_val |= SW_FC;			//MOD
+
+	reg_val &= ~SW_FC;
+#endif
+
+
+	ret = twl_i2c_write_u8(TWL6030_MODULE_ID0, reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		return ret;
+		pr_err("twl6030: Failed to write MMCCTRL, error %d\n", ret);
+	}
+	reg_val=0;
+
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val, TWL6030_MMCCTRL);
+	printk("[KIMBC] ###################### 0x%x \n",reg_val);
+#endif
 	return 0;
 }
 
@@ -292,11 +369,11 @@ int twl6030_mmc_card_detect_config(void)
 		return ret;
 	}
 	#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
-	reg_val |= VMMC_AUTO_OFF;
+	reg_val |= VMMC_AUTO_OFF;	//MOD
 #ifndef CONFIG_MACH_LGE_MMC_COVER
 	reg_val |= SW_FC;
 #else
-	reg_val |= SW_FC;
+	reg_val |= SW_FC;			//MOD
 #endif
 	#else
 	//reg_val &= ~VMMC_AUTO_OFF;

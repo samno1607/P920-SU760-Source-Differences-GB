@@ -22,3 +22,12 @@ config SUBPMIC_LM3528
 	  LM3528, say Y here to enable this driver.
 	  To compile this driver as a module, choose M here: the module will
 	  be called lm3528_bl.
+
+config SUBPMIC_LM3530
+        bool "Backlight driver for LM3528 using OLED"
+        default n
+        help
+            If you have a LCD backlight connected to the brightness output of
+            LM3530, say Y here to enable this driver.
+            To compile this driver as a module, choose M here: the module will
+            be called lm3530_bl.

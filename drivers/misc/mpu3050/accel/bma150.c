@@ -74,7 +74,7 @@ static int bma150_resume(void *mlsl_handle,
 	result =
 	    MLSLSerialWriteSingle(mlsl_handle, pdata->address, 0x0a, 0x02);
 	ERROR_CHECK(result);
-	MLOSSleep(10);
+	MLOSSleep(3);
 
 	result =
 	    MLSLSerialRead(mlsl_handle, pdata->address, 0x14, 1, &reg);
@@ -108,7 +108,10 @@ static int bma150_read(void *mlsl_handle,
 		       struct ext_slave_platform_data *pdata,
 		       unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 static struct ext_slave_descr bma150_descr = {
@@ -118,6 +121,7 @@ static struct ext_slave_descr bma150_descr = {
 	/*.resume           = */ bma150_resume,
 	/*.read             = */ bma150_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "bma150",
 	/*.type             = */ EXT_SLAVE_TYPE_ACCELEROMETER,
 	/*.id               = */ ACCEL_ID_BMA150,

@@ -26,15 +26,22 @@ enum lge_dynamic_nvdata_offset {
 
 	LGE_NVDATA_DYNAMIC_FACTORY_RESET_STATUS_OFFSET 	= 518,  // used size 1 byte, for at%frst & at%frstatus
 	LGE_NVDATA_DYNAMIC_FBOOT_OFFSET 	= 520,  // used size 1 byte, for at%fboot
+	//LGE_NVDATA_DYNAMIC_FRSTSTATUS_OFFSET    = 522,// at%frststatus //moves to static nv area.
 
+// CHEOLGWAK  2011-2-26 CP_CRASH_COUNT
 	LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET = 523,  // used size 1 byte
+// CHEOLGWAK  2011-2-26 	CP_CRASH_COUNT
 
-	
+	//LGE_ChangeS jaesung.woo@lge.com 20110131 CIQ [START]
 	LGE_NVDATA_DYNAMIC_CIQ_NVDATA_RESET_OFFSET = 524, // used size 2 byte //RESET SIDE & CAUSE
-	
+	//LGE_ChangeS jaesung.woo@lge.com 20110131 CIQ [END]
+
+	//LGE_S woosock.yang@lge.com 20110512
 	LGE_NVDATA_DYNAMIC_HARD_RESET_OFFSET = 526, 
+	//LGE_E
 
 	LGE_NVDATA_DYNAMIC_RTC_INIT_OFFSET = 528,
+	LGE_NVDATA_DYNAMIC_FRSTSTATUS3_OFFSET = 530,//11.07.23 if set, must jump to recovery mode.
 
 	LGE_NVDATA_DYNAMIC_910K_DETECT_OFFSET	= 1024,  // used size 1 byte
 
@@ -49,7 +56,7 @@ enum lge_dynamic_nvdata_offset {
 
 	LGE_NVDATA_DYNAMIC_CHARGING_TEMP_OFFSET	= 2600,	// used size 1 byte
 
-	LGE_NVDATA_DYNAMIC_UBOOT_TIME = 4096
+	LGE_NVDATA_DYNAMIC_UBOOT_TIME = 4096//check boot time. 
 	// Please add offset of data that you want to use
 
 

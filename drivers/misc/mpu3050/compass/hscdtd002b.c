@@ -107,6 +107,7 @@ int hscdtd002b_read(void *mlsl_handle,
 {
 	unsigned char stat;
 	tMLError result = ML_SUCCESS;
+	int status = ML_SUCCESS;
 
 	/* Read status reg. to check if data is ready */
 	result =
@@ -119,35 +120,29 @@ int hscdtd002b_read(void *mlsl_handle,
 				   COMPASS_HSCDTD002B_DATAX, 6,
 				   (unsigned char *) data);
 		ERROR_CHECK(result);
-
-		/* trigger next measurement read */
-		result =
-		    MLSLSerialWriteSingle(mlsl_handle, pdata->address,
-					  COMPASS_HSCDTD002B_CTRL3, 0x40);
-		ERROR_CHECK(result);
-
-		return ML_SUCCESS;
+		status = ML_SUCCESS;
 	} else if (stat & 0x20) {
-		/* trigger next measurement read */
-		result =
-		    MLSLSerialWriteSingle(mlsl_handle, pdata->address,
-					  COMPASS_HSCDTD002B_CTRL3, 0x40);
-		ERROR_CHECK(result);
-		return ML_ERROR_COMPASS_DATA_OVERFLOW;
+		status = ML_ERROR_COMPASS_DATA_OVERFLOW;
 	} else {
-		/* trigger next measurement read */
-		result =
-		    MLSLSerialWriteSingle(mlsl_handle, pdata->address,
-					  COMPASS_HSCDTD002B_CTRL3, 0x40);
-		ERROR_CHECK(result);
-		return ML_ERROR_COMPASS_DATA_NOT_READY;
+		status = ML_ERROR_COMPASS_DATA_NOT_READY;
 	}
+	/* trigger next measurement read */
+	result =
+		MLSLSerialWriteSingle(mlsl_handle, pdata->address,
+			  COMPASS_HSCDTD002B_CTRL3, 0x40);
+	ERROR_CHECK(result);
+
+	return status;
 }
 
 struct ext_slave_descr hscdtd002b_descr = {
+	/*.init             = */ NULL,
+	/*.exit             = */ NULL,
 	/*.suspend          = */ hscdtd002b_suspend,
 	/*.resume           = */ hscdtd002b_resume,
 	/*.read             = */ hscdtd002b_read,
+	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "hscdtd002b",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_HSCDTD002B,
@@ -161,10 +156,7 @@ struct ext_slave_descr *hscdtd002b_get_slave_descr(void)
 {
 	return &hscdtd002b_descr;
 }
-
-#ifdef __KERNEL__
 EXPORT_SYMBOL(hscdtd002b_get_slave_descr);
-#endif
 
 /**
  *  @}

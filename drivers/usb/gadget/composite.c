@@ -115,9 +115,13 @@ void usb_composite_force_reset(struct usb_composite_dev *cdev)
 	unsigned long			flags;
 	spin_lock_irqsave(&cdev->lock, flags);
 	/* force reenumeration */
+
+	if (cdev && cdev->gadget && cdev->gadget->speed != USB_SPEED_UNKNOWN) {
+#if 0 
 	if (cdev->gadget && cdev->gadget->speed != USB_SPEED_UNKNOWN) {
 		/* avoid sending a disconnect switch event until after we disconnect */
 		cdev->mute_switch = 1;
+#endif
 		spin_unlock_irqrestore(&cdev->lock, flags);
 
 		usb_gadget_disconnect(cdev->gadget);
@@ -157,8 +161,14 @@ int usb_add_function(struct usb_configuration *config,
 		goto done;
 
 	index = atomic_inc_return(&cdev->driver->function_count);
+#ifdef CONFIG_USB_PERSONALITY
+       function->disabled= 0; //start enabling
+	function->dev = device_create(cdev->driver->class, NULL,
+		MKDEV(0, index), function, function->name);
+#else
 	function->dev = device_create(cdev->driver->class, NULL,
 		MKDEV(0, index), NULL, function->name);
+#endif
 	if (IS_ERR(function->dev))
 		return PTR_ERR(function->dev);
 
@@ -167,7 +177,9 @@ int usb_add_function(struct usb_configuration *config,
 		device_destroy(cdev->driver->class, MKDEV(0, index));
 		return value;
 	}
+#ifndef CONFIG_USB_PERSONALITY
 	dev_set_drvdata(function->dev, function);
+#endif
 	function->config = config;
 	list_add_tail(&function->list, &config->functions);
 
@@ -877,6 +889,15 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	u16				w_length = le16_to_cpu(ctrl->wLength);
 	struct usb_function		*f = NULL;
 	u8				endp;
+	unsigned long			flags;
+
+	spin_lock_irqsave(&cdev->lock, flags);
+	if (!cdev->connected) {
+		cdev->connected = 1;
+		schedule_work(&cdev->switch_work);
+	}
+	spin_unlock_irqrestore(&cdev->lock, flags);
+
 
 	/* partial re-init of the response message; the function or the
 	 * gadget might need to intercept e.g. a control-OUT completion
@@ -1096,9 +1117,13 @@ static void composite_disconnect(struct usb_gadget *gadget)
 	if (composite->disconnect)
 		composite->disconnect(cdev);
 #else
+
+	cdev->connected = 0;
+#if 0
 	if (cdev->mute_switch)
 		cdev->mute_switch = 0;
 	else
+#endif
 		schedule_work(&cdev->switch_work);
 #endif
 	spin_unlock_irqrestore(&cdev->lock, flags);
@@ -1144,10 +1169,17 @@ composite_unbind(struct usb_gadget *gadget)
 			if (f->unbind) {
 				DBG(cdev, "unbind function '%s'/%p\n",
 						f->name, f);
+#ifdef CONFIG_USB_PERSONALITY
+			f->disabled = 1;	//start disabling
+			if (!IS_ERR(f->dev)) {
+				device_remove_file(f->dev, &dev_attr_enable);
+				device_destroy(cdev->driver->class, f->dev->devt);
+			}
+#endif
 				f->unbind(c, f);
 				/* may free memory for "f" */
 			}
-			if (!IS_ERR(f->dev)) {
+			else if (!IS_ERR(f->dev)) {
 				device_remove_file(f->dev, &dev_attr_enable);
 				device_destroy(cdev->driver->class, f->dev->devt);
 			}
@@ -1168,7 +1200,11 @@ composite_unbind(struct usb_gadget *gadget)
 		usb_ep_free_request(gadget->ep0, cdev->req);
 	}
 
+	switch_dev_unregister(&cdev->sw_connected);
+	switch_dev_unregister(&cdev->sw_config);
+#if 0
 	switch_dev_unregister(&cdev->sdev);
+#endif 
 	kfree(cdev);
 	set_gadget_data(gadget, NULL);
 	device_remove_file(&gadget->dev, &dev_attr_suspended);
@@ -1203,11 +1239,29 @@ composite_switch_work(struct work_struct *data)
 	struct usb_composite_dev	*cdev =
 		container_of(data, struct usb_composite_dev, switch_work);
 	struct usb_configuration *config = cdev->config;
+	int connected;
+	unsigned long flags;
+
+	spin_lock_irqsave(&cdev->lock, flags);
+	if (cdev->connected != cdev->sw_connected.state) {
+		connected = cdev->connected;
+		spin_unlock_irqrestore(&cdev->lock, flags);
+		switch_set_state(&cdev->sw_connected, connected);
+	} else {
+		spin_unlock_irqrestore(&cdev->lock, flags);
+	}
+
 
 	if (config)
+		switch_set_state(&cdev->sw_config, config->bConfigurationValue);
+#if 0
 		switch_set_state(&cdev->sdev, config->bConfigurationValue);
+#endif
 	else
+		switch_set_state(&cdev->sw_config, 0);
+#if 0
 		switch_set_state(&cdev->sdev, 0);
+#endif
 }
 
 static int composite_bind(struct usb_gadget *gadget)
@@ -1261,8 +1315,16 @@ static int composite_bind(struct usb_gadget *gadget)
 	if (status < 0)
 		goto fail;
 
+	cdev->sw_connected.name = "usb_connected";
+	status = switch_dev_register(&cdev->sw_connected);
+	if (status < 0)
+		goto fail;
+	cdev->sw_config.name = "usb_configuration";
+	status = switch_dev_register(&cdev->sw_config);
+#if 0 // hunsoo.lee GB
 	cdev->sdev.name = "usb_configuration";
 	status = switch_dev_register(&cdev->sdev);
+#endif
 	if (status < 0)
 		goto fail;
 	INIT_WORK(&cdev->switch_work, composite_switch_work);
@@ -1358,6 +1420,8 @@ composite_uevent(struct device *dev, struct kobj_uevent_env *env)
 		return 0;
 	}
 
+	printk(KERN_DEBUG "composite_uevent, function = %s, enabled=%d\n",f->name,!f->disabled);
+	
 	if (add_uevent_var(env, "FUNCTION=%s", f->name))
 		return -ENOMEM;
 	if (add_uevent_var(env, "ENABLED=%d", !f->disabled))

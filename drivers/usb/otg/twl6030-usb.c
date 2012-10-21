@@ -235,6 +235,7 @@ void *tmp_twl;
 void *tmp_twl_otg;
 
 static void twl6030_usb_irq_wq_func(struct work_struct *twl6030_usb_irq_wq)
+//static irqreturn_t twl6030_usb_irq_wq_func(int irq, void *_twl)
 {
 	struct twl6030_usb *twl = tmp_twl;// hunsoo _twl;
 	int status  = USB_EVENT_NONE;
@@ -279,6 +280,7 @@ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
 
 
 static void twl6030_usbotg_irq_wq_func(struct work_struct *twl6030_usbotg_irq_wq)
+//static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
 {
 	struct twl6030_usb *twl = tmp_twl_otg; // _twl;
 	int status ;

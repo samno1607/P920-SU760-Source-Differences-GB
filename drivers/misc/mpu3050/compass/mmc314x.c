@@ -163,6 +163,7 @@ struct ext_slave_descr mmc314x_descr = {
 	/*.resume           = */ mmc314x_resume,
 	/*.read             = */ mmc314x_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "mmc314x",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_MMC314X,

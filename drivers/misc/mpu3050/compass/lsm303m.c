@@ -223,6 +223,7 @@ struct ext_slave_descr lsm303dlhm_descr = {
 	/*.resume           = */ lsm303dlhm_resume,
 	/*.read             = */ lsm303dlhm_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "lsm303dlhm",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_LSM303,

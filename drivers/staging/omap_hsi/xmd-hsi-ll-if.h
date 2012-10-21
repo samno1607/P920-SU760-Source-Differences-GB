@@ -19,6 +19,8 @@
 #ifndef __XMD_HSI_LL_IF_H__
 #define __XMD_HSI_LL_IF_H__
 
+#include "xmd-hsi-ll-cfg.h"
+
 /* HSI Result type*/
 enum {
 	HSI_LL_RESULT_SUCCESS          =  0, /* Request executed successfully. */
@@ -40,9 +42,16 @@ enum {
 	HSI_LL_EV_ERROR_DETECTED,  /* error detected. */
 	HSI_LL_EV_ALLOC_MEM,       /* Memory alloction request. */
 	HSI_LL_EV_FREE_MEM,        /* Memory free request. */
-	HSI_LL_EV_RESET_MEM,       /* request to release all memory and reset mem alloc module. */
+	HSI_LL_EV_RESET_MEM,       /* request to release all memory and
+								  reset mem alloc module. */
 	HSI_LL_EV_WRITE_COMPLETE,  /* Write complete indication. */
 	HSI_LL_EV_READ_COMPLETE,   /* Read complete indication. */
+};
+
+/* IOCTL commands */
+enum {
+	HSI_LL_IOCTL_RX_RESUME,
+	HSI_LL_IOCTL_INVALID,
 };
 
 /* Tx/Rx data structure */
@@ -57,10 +66,15 @@ typedef struct hsi_ll_rx_tx_data {
  * @event: event, check for event type.
  * @arg: Event specific argument.
  */
-typedef void (*hsi_ll_notify)(unsigned int channel, int result, int event, void* arg);
+typedef void (*hsi_ll_notify)(unsigned int channel,
+							  int result,
+							  int event,
+							  void* arg);
 
-/* hsi_ll_init - HSI LL initialization function , returns HSI_LL_RESULT_SUCCESS on success.
- * @port: Number of ports to be used. Should match with number of ports defined in hsi_driverif.h.
+/* hsi_ll_init - HSI LL initialization function , returns HSI_LL_RESULT_SUCCESS
+				on success.
+ * @port: Number of ports to be used. Should match with number of ports defined
+		in hsi_driverif.h.
  * @cb: pointer to callback .
  */
 int hsi_ll_init(int port, const hsi_ll_notify cb);
@@ -76,16 +90,39 @@ int hsi_ll_open(int channel);
 int hsi_ll_close(int channel);
 
 /* hsi_ll_write - HSI LL write data, returns HSI_LL_RESULT_SUCCESS on success.
- * buffer should be retained until callback for write completion is invoked by HSI LL.
+ * buffer should be retained until callback for write completion is invoked
+ * by HSI LL.
  * @channel: Channel number.
  * @buf: Pointer to buffer.
  * @size: number of bytes to be transferred.
  */
+void hsi_ll_reset_write_channel(int channel);
+
 int hsi_ll_write(int channel, unsigned char *buf, unsigned int size);
 
-/* hsi_ll_shutdown - HSI LL shutdown, to be invoked to release all resources during shutdown,
+/* hsi_ll_shutdown - HSI LL shutdown, to be invoked to release all resources
+ *					during shutdown,
  * returns HSI_LL_RESULT_SUCCESS on success.
  */
 int hsi_ll_shutdown(void);
+
+/* hsi_ll_reset - HSI LL RESET, to be invoked to reset DLP and HSI PHY driver
+ *				  to recovery from error,
+ * returns HSI_LL_RESULT_SUCCESS on success.
+ */
+
+enum {
+	HSI_LL_RESET_RECOVERY 		=  0,
+	HSI_LL_RESET_IFX_COREDUMP 	=  1,
+};
+
+int hsi_ll_reset(int type);
+
+int hsi_ll_restart(void);
+
+/* hsi_ll_ioctl - HSI LL IOCTL, to be invoked to execute IO CTRL CMDs
+ * returns HSI_LL_RESULT_SUCCESS on success.
+ */
+int hsi_ll_ioctl(int channel, int command, void *arg);
 
 #endif /* __XMD_HSI_LL_IF_H__ */

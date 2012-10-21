@@ -13,9 +13,7 @@
  #define DEBUG_MSG(args...)
  #endif
 
- 
 int g_osp_lcd_level = 0;
-
 
 struct lm3528_platform_data*	 plm3528data = NULL;
 static int	old_brightness	=	-1;
@@ -61,6 +59,7 @@ ssize_t lm3528_setBrightness(int		brightness, size_t count)
 
 			int m2DLevels[] =	{40, 42, 44, 47, 52, 57, 62, 64, 67, 71, 74,  86, 102, 104, 105};
 			int m3DLevels[] =	{63, 65, 67, 70, 75, 80, 84, 86, 88, 92, 94, 109, 125, 126, 127, 127}; 
+			// int m3DLevels[] =	{72, 73, 74, 76, 80, 84, 88, 92, 98, 109, 125, 126, 127, 127};   //1A¢®A
 
 			int mLength = sizeof(m2DLevels)/sizeof(int);
 
@@ -102,9 +101,7 @@ ssize_t lm3528_setBrightness(int		brightness, size_t count)
 		goto	exit;
 	
 
-	
 	g_osp_lcd_level = brightness; 
-	
 
 	if (brightness == 0) {	// Zero-Brightness, Turn off LM3528
 		lm3528_set_hwen(&pdata->private, pdata->gpio_hwen, 0);
@@ -112,6 +109,7 @@ ssize_t lm3528_setBrightness(int		brightness, size_t count)
 		goto	exit;
 	}
 
+	//if (old_brightness < brightness) 
 	{	// Dimming up
 		if (old_brightness == 0)
 		{		

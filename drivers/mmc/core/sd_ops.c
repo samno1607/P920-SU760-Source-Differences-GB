@@ -339,7 +339,7 @@ int mmc_sd_switch(struct mmc_card *card, int mode, int group,
 
 	mmc_set_data_timeout(&data, card);
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH	//20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC		[START]
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
 
 	if(mmc_wait_for_req(card->host, &mrq) == 0xbcbc)
 	{
@@ -348,7 +348,7 @@ int mmc_sd_switch(struct mmc_card *card, int mode, int group,
 
 #else
 	mmc_wait_for_req(card->host, &mrq);
-#endif	//20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC		[END]
+#endif	
 
 	if (cmd.error)
 		return cmd.error;

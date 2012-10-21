@@ -1407,7 +1407,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 			if (bdev->bd_invalidated)
 				rescan_partitions(disk, bdev);
 
-		#endif								
+		#endif							
 			
 		} else {
 			struct block_device *whole;
@@ -1459,7 +1459,7 @@ static int __blkdev_get(struct block_device *bdev, fmode_t mode, int for_part)
 				rescan_partitions(bdev->bd_disk, bdev);
 
 
-		#endif								
+		#endif								//FW KIMBYUNGCHUL 20110516 [END]
 		}
 	}
 	bdev->bd_openers++;

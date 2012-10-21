@@ -212,6 +212,9 @@ static int scenario_find_playback_paths (struct snd_soc_dapm_context *dapm,
 
 		if( path == 0 ) continue;
 		
+//		dev_dbg(dapm->dev," %d:try source %s path %s to %s len %d connect %d\n",
+//				hops, source->name, path->name, path->sink->name,
+//				path->length, path->connect);
 
 		/* been here before ? */
 		if (path->length && path->length <= hops)
@@ -257,6 +260,9 @@ static int scenario_find_capture_paths (struct snd_soc_dapm_context *dapm,
 
 		if( path == 0 ) continue;
 
+//		dev_dbg(dapm->dev," %d:try sink %s path %s to %s len %d connect %d\n",
+//				hops, sink->name, path->name, path->source->name,
+//				path->length, path->connect);
 
 		/* been here before ? */
 		if (path->length && path->length <= hops)
@@ -704,8 +710,8 @@ static int snd_soc_dapm_suspend_check(struct snd_soc_dapm_widget *widget)
 	switch (level) {
 	case SNDRV_CTL_POWER_D3hot:
 	case SNDRV_CTL_POWER_D3cold:
-		if (widget->ignore_suspend)
-			pr_debug("%s ignoring suspend\n", widget->name);
+//		if (widget->ignore_suspend)
+//			pr_debug("%s ignoring suspend\n", widget->name);
 		return widget->ignore_suspend;
 	default:
 		return 1;
@@ -2325,7 +2331,7 @@ static void soc_dapm_stream_event(struct snd_soc_dapm_context *dapm,
 
 	/* do we need to notify any clients that DAPM stream is complete */
 	if (dapm->stream_event)
-		dapm->stream_event(dapm);
+		dapm->stream_event(dapm, event);
 }
 
 /**

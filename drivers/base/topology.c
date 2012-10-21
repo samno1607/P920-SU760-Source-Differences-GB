@@ -134,7 +134,7 @@ static int __cpuinit topology_add_dev(unsigned int cpu)
 {
 	struct sys_device *sys_dev = get_cpu_sysdev(cpu);
 
-	if(sys_dev != NULL)
+	if(sys_dev != NULL)  //[20110315:geayoung.baek] WBT
 	{
 		return sysfs_create_group(&sys_dev->kobj, &topology_attr_group);
 	}
@@ -144,7 +144,7 @@ static void __cpuinit topology_remove_dev(unsigned int cpu)
 {
 	struct sys_device *sys_dev = get_cpu_sysdev(cpu);
 
-	if(sys_dev != NULL)
+	if(sys_dev != NULL)  //[20110315:geayoung.baek] WBT
 	{
 		sysfs_remove_group(&sys_dev->kobj, &topology_attr_group);
 	}

@@ -176,6 +176,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(gauge_control_count),
 	POWER_SUPPLY_ATTR(charger_mode),
 	POWER_SUPPLY_ATTR(temp_control),
+	POWER_SUPPLY_ATTR(start_cond),
 	POWER_SUPPLY_ATTR(type),
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
@@ -204,7 +205,6 @@ static mode_t power_supply_attr_is_visible(struct kobject *kobj,
 		if (property == attrno) {
 			if (psy->property_is_writeable &&
 			    psy->property_is_writeable(psy, property) > 0)
-				
 				mode |= S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP | S_IROTH;;
 
 			return mode;

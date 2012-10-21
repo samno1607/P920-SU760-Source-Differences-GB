@@ -232,7 +232,7 @@ static u32 get_card_status(struct mmc_card *card, struct request *req)
 	struct mmc_command cmd;
 	int err;
 
-	
+	// hyoungsuk.jang@lge.com 20110222 Freezing on SD removal [START]
 	if (mmc_card_sd(card))	// make sure external SD not intnernal eMMC
 	{
 		extern int omap_hsmmc_get_detect_pin_state(struct mmc_host *host);
@@ -241,7 +241,7 @@ static u32 get_card_status(struct mmc_card *card, struct request *req)
 			return 0;
 		}					
 	}
-	
+	// hyoungsuk.jang@lge.com 20110222 Freezing on SD removal [END]
 
 	memset(&cmd, 0, sizeof(struct mmc_command));
 	cmd.opcode = MMC_SEND_STATUS;
@@ -280,10 +280,10 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	struct mmc_card *card = md->queue.card;
 	struct mmc_blk_request brq;
 	int ret = 1, disable_multi = 0;
-	#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
+	//#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
 	int l_err_count = 1;
-	#endif
-	
+	//#endif
+
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	if (mmc_bus_needs_resume(card->host)) {
 		mmc_resume_bus(card->host);
@@ -390,7 +390,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 				printk(KERN_WARNING "%s: retrying using single "
 				       "block read\n", req->rq_disk->disk_name);
 				disable_multi = 1;
-				#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
+				//#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
 				if ((brq.data.error == -EILSEQ) &&(mmc_card_sd(card)))
 				{
 					if (l_err_count < 3)
@@ -404,7 +404,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 						printk(KERN_WARNING "\n----------->  OOPS ! there is no more down speed step\n");
 					}
 				}
-				#endif
+				//#endif
 				continue;
 			}
 			status = get_card_status(card, req);
@@ -442,7 +442,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 				int err;
 
 
-
+// hyoungsuk.jang@lge.com 20110119 Freezing on SD removal [START]
 				if (mmc_card_sd(card))	// make sure external SD not intnernal eMMC
 				{
 					extern int omap_hsmmc_get_detect_pin_state(struct mmc_host *host);
@@ -451,7 +451,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 						goto cmd_err;
 					}					
 				}
-
+// hyoungsuk.jang@lge.com 20110119 Freezing on SD removal [END]
 
 				cmd.opcode = MMC_SEND_STATUS;
 				cmd.arg = card->rca << 16;
@@ -469,13 +469,21 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 				 */
 			} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
 				(R1_CURRENT_STATE(cmd.resp[0]) == 7));
+
+#if 0
+			if (cmd.resp[0] & ~0x00000900)
+				printk(KERN_ERR "%s: status = %08x\n",
+				       req->rq_disk->disk_name, cmd.resp[0]);
+			if (mmc_decode_status(cmd.resp))
+				goto cmd_err;
+#endif
 		}
 
-		
+		// hyoungsuk.jang@lge.com 20110211 SD insertion lock up patch from STAR [START]
 		if (brq.cmd.error == -ENOMEDIUM) {
 			goto cmd_err;
 		}
-		
+		// hyoungsuk.jang@lge.com 20110211 SD insertion lock up patch from STAR [END]		
 
 		if (brq.cmd.error || brq.stop.error || brq.data.error) {
 			if (rq_data_dir(req) == READ) {
@@ -487,7 +495,9 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 				spin_lock_irq(&md->lock);
 				ret = __blk_end_request(req, -EIO, brq.data.blksz);
 				spin_unlock_irq(&md->lock);
+				// #ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
 				continue;
+				// #endif
 			}
 			goto cmd_err;
 		}
@@ -516,6 +526,10 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 	if (mmc_card_sd(card)) {
 		u32 blocks;
 
+// hyoungsuk.jang@lge.com 20110119 Freezing on SD removal [START]
+#if 0
+		blocks = mmc_sd_num_wr_blocks(card);
+#else
 		extern int omap_hsmmc_get_detect_pin_state(struct mmc_host *host);
 		if (omap_hsmmc_get_detect_pin_state(card->host) == 0) {
 			printk(KERN_WARNING "[microSD] SD is not present. here is cmd_err 2 \n");
@@ -523,7 +537,8 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		} else {
 			blocks = mmc_sd_num_wr_blocks(card);		
 		}
-
+#endif
+// hyoungsuk.jang@lge.com 20110119 Freezing on SD removal [END]
 		if (blocks != (u32)-1) {
 			spin_lock_irq(&md->lock);
 			ret = __blk_end_request(req, 0, blocks << 9);
@@ -671,7 +686,7 @@ static int mmc_blk_probe(struct mmc_card *card)
 	mmc_set_bus_resume_policy(card->host, 1);
 #endif
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	  //FW KIMBYUNGCHUL 20110516 [START]
 	if(add_disk(md->disk) == 0xbcbc)
 	{
 		err = 0xbcbc;
@@ -679,7 +694,7 @@ static int mmc_blk_probe(struct mmc_card *card)
 	}
 #else
 	add_disk(md->disk);
-#endif
+#endif								  //FW KIMBYUNGCHUL 20110516 [END]
 
 	return 0;
 

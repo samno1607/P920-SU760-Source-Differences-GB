@@ -59,7 +59,7 @@ static int vibe_timer_state	=	0;
 
 #if defined(CONFIG_MACH_LGE_COSMO_REV_A) || defined(CONFIG_MACH_LGE_COSMO_REV_B) || defined(CONFIG_MACH_LGE_COSMO_REV_C)
 #define MOTOR_RESONANCE_HZ 175
-#else
+#else	
 #define MOTOR_RESONANCE_HZ 226
 #endif
 #define MOTOR_RESONANCE_COUTER_VALUE	 (0xFFFFFFFE - ((CLK_COUNT/MOTOR_RESONANCE_HZ)/128))

@@ -340,7 +340,19 @@ static void dss_clk_enable_no_ctx(enum dss_clock clks)
 
 void dss_clk_enable(enum dss_clock clks)
 {
+#if 0
+	bool check_ctx = core.num_clks_enabled == 0;
+#endif
 	dss_clk_enable_no_ctx(clks);
+
+#if 0
+	/*
+	 * FixMe
+	 * See the note in dss_clk_disable().
+	 */
+	if (check_ctx && cpu_is_omap34xx() && dss_need_ctx_restore())
+		restore_all_ctx();
+#endif
 }
 
 int dss_opt_clock_enable()
@@ -392,6 +404,21 @@ void dss_clk_disable(enum dss_clock clks)
 		unsigned num_clks = count_clk_bits(clks);
 
 		BUG_ON(core.num_clks_enabled < num_clks);
+
+#if 0
+		/*
+		 * FixMe
+		 * There is a yet unresolved catch-22 here.  During
+		 * initialization, this routine is called dss_init().  At that
+		 * time, the context can not be saved as the dispc memory used
+		 * to store the context is not not yet allocated.  That is
+		 * allocated later by dispc_init().  But we can't call
+		 * dispc_init() first as it needs to use core.pdev and that is
+		 * initialized by dss_init.  This'll need to be fixed for PM.
+		 */
+		if (core.num_clks_enabled == num_clks)
+			save_all_ctx();
+#endif
 	}
 
 	dss_clk_disable_no_ctx(clks);
@@ -875,6 +902,50 @@ static int omap_dispchw_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#if 0 
+static int omap_dsihw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = dsi_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize dsi\n");
+		goto err_dsi;
+	}
+	return 0;
+
+err_dsi:
+	return r;
+}
+
+static int omap_dsihw_remove(struct platform_device *pdev)
+{
+	dsi_exit();
+	return 0;
+}
+
+static int omap_dsi2hw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = dsi2_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize dsi2\n");
+		goto err_dsi2;
+	}
+	return 0;
+
+err_dsi2:
+	return r;
+}
+
+static int omap_dsi2hw_remove(struct platform_device *pdev)
+{
+	dsi2_exit();
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_OMAP2_DSS_HDMI
 static int omap_hdmihw_probe(struct platform_device *pdev)
 {
@@ -936,6 +1007,32 @@ static struct platform_driver omap_dispchw_driver = {
 		.owner  = THIS_MODULE,
 	},
 };
+
+#if 0 
+static struct platform_driver omap_dsihw_driver = {
+	.probe          = omap_dsihw_probe,
+	.remove         = omap_dsihw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver         = {
+		.name   = "dss_dsi1",
+		.owner  = THIS_MODULE,
+	},
+};
+
+static struct platform_driver omap_dsi2hw_driver = {
+	.probe          = omap_dsi2hw_probe,
+	.remove         = omap_dsi2hw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver         = {
+		.name   = "dss_dsi2",
+		.owner  = THIS_MODULE,
+	},
+};
+#endif
 
 #ifdef CONFIG_OMAP2_DSS_HDMI
 static struct platform_driver omap_hdmihw_driver = {

@@ -127,6 +127,10 @@
 #define REG_INT_MSK_STS_C		0x08
 
 /* MASK INT REG GROUP A */
+//kibum.lee
+//#define TWL6030_PWR_INT_MASK 		0x07
+
+//kibum.lee
 #define TWL6030_PWR_INT_MASK 		0x03
 #define TWL6030_VBAT_LOW_MASK 		0x04
 
@@ -619,12 +623,10 @@ struct twl4030_codec_audio_data {
 	/* twl6040 */
 	int audpwron_gpio;	/* audio power-on gpio */
 	int naudint_irq;	/* audio interrupt */
-
 #if defined(CONFIG_MACH_LGE_COSMO_REV_A)
 	unsigned int hsjack_gpio;
 	unsigned int hsjack_irq;
 #endif
-
 };
 
 struct twl4030_codec_vibra_data {
@@ -765,7 +767,6 @@ static inline int twl4030charger_usb_en(int enable) { return 0; }
 #define TWL6030_REG_VRTC	47
 
 #endif /* End of __TWL4030_H */
-
 
 
 

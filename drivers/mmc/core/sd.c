@@ -340,7 +340,6 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
 	int retries;
 #endif
-
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
@@ -572,7 +571,6 @@ static void mmc_sd_detect(struct mmc_host *host)
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
-	
 	{
 		extern int omap_hsmmc_get_detect_pin_state(struct mmc_host *host);
 		if (omap_hsmmc_get_detect_pin_state(host) == 0)
@@ -581,7 +579,6 @@ static void mmc_sd_detect(struct mmc_host *host)
 			goto sd_is_out;
 		}
 	}
-	
        
 	mmc_claim_host(host);
 
@@ -618,21 +615,21 @@ sd_is_out:
 	}
 }
 
-#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
+//#ifdef CONFIG_MACH_LGE_COSMO_DOMASTIC
 void mmc_sd_speed_cntrol(struct mmc_host *host,int down_step)
 {
 	if (down_step == 1)
 	{
-		mmc_set_clock(host, 40000000);
+		mmc_set_clock(host, 40000000); // it will be converted to 32MHz
 	}
 	else if (down_step == 2)
 	{
-		mmc_set_clock(host, 30000000);
+		mmc_set_clock(host, 30000000); // it will be converted to 24MHz
 	}
 }
 
 EXPORT_SYMBOL(mmc_sd_speed_cntrol);
-#endif
+//#endif
 
 /*
  * Suspend callback from host.
@@ -642,7 +639,7 @@ static int mmc_sd_suspend(struct mmc_host *host)
 {
 	BUG_ON(!host);
 	BUG_ON(!host->card);
-	
+
 	#if 0
 	mmc_claim_host(host);
 	
@@ -660,13 +657,11 @@ static int mmc_sd_suspend(struct mmc_host *host)
 {
 	BUG_ON(!host);
 	BUG_ON(!host->card);
-	
+
 	mmc_claim_host(host);
-	
 	if (!mmc_host_is_spi(host))
 		mmc_deselect_cards(host);
 	host->card->state &= ~MMC_STATE_HIGHSPEED;
-	
 	mmc_release_host(host);
 
 	return 0;
@@ -724,8 +719,8 @@ static int mmc_sd_resume(struct mmc_host *host)
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
+
 	mmc_claim_host(host);
-	
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
 	retries = 5;
 	while (retries) {
@@ -743,17 +738,30 @@ static int mmc_sd_resume(struct mmc_host *host)
 #else
 	err = mmc_sd_init_card(host, host->ocr, host->card);
 #endif
-	
 	mmc_release_host(host);
+
 	return err;
 }
 #endif
 static void mmc_sd_power_restore(struct mmc_host *host)
 {
+// hyoungsuk.jang 20110118 SD insertion/removal kernel panic [START]
+
+  #if 1	//20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
+
 	if (host == NULL ) 
 		return;
 	if(host->card != NULL)		
 		host->card->state &= ~MMC_STATE_HIGHSPEED;
+  #else
+	if (host == NULL || host->card == NULL) 
+		return;
+	host->card->state &= ~MMC_STATE_HIGHSPEED;
+
+  #endif	//20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
+
+	
+// hyoungsuk.jang 20110118 SD insertion/removal kernel panic [END]	
 	
 	mmc_claim_host(host);
 	mmc_sd_init_card(host, host->ocr, host->card);

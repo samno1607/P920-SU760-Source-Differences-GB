@@ -2584,12 +2584,12 @@ error:
 	ipu_pm_timer_state(PM_HIB_TIMER_ON);
 #endif
 	tmm_dmm_free_page_stack();
-	pr_debug("Aborting hibernation process\n");
+	pr_err("Aborting hibernation process\n");
 	mutex_unlock(ipu_pm_state.gate_handle);
 	return -EINVAL;
 restore:
 	tmm_dmm_free_page_stack();
-	pr_debug("Starting restore_ctx since messages pending in mbox\n");
+	pr_err("Starting restore_ctx since messages pending in mbox\n");
 	mutex_unlock(ipu_pm_state.gate_handle);
 	ipu_pm_restore_ctx(proc_id);
 	return 0;
@@ -3159,13 +3159,13 @@ static int ipu_pm_timer_state(int event)
 	switch (event) {
 	case PM_HIB_TIMER_EXPIRE:
 		if (params->hib_timer_state == PM_HIB_TIMER_ON) {
-			pr_debug("Starting hibernation, waking up M3 cores");
+			pr_err("Starting hibernation, waking up M3 cores");
 			handle->rcb_table->state_flag |= ENABLE_SELF_HIB;
 			handle->rcb_table->hib_flag_sysm3 = START_HIB_FLAG;
 			handle->rcb_table->hib_flag_appm3 = START_HIB_FLAG;
 #ifdef CONFIG_DUCATI_WATCH_DOG
 			if (global_rcb->pm_flags.wdt_allowed) {
-				if (sys_rproc->dmtimer != NULL)
+			if (sys_rproc->dmtimer != NULL)
 					omap_dm_timer_set_load(
 							sys_rproc->dmtimer, 1,
 						params->wdt_time);

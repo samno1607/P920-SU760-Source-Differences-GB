@@ -170,7 +170,7 @@ static struct reg_type ch_reg_type[] = {
 #endif
 
 static struct workqueue_struct *omap2_mcspi_wq;
-static struct wake_lock spi_lock;
+static struct wake_lock spi_lock;	//20110419 TI cliff.lee
 
 #define MOD_REG_BIT(val, mask, set) do { \
 	if (set) \
@@ -287,7 +287,8 @@ static void omap2_mcspi_set_enable(const struct spi_device *spi, int enable)
 	/* Flash post-writes */
 	mcspi_read_cs_reg(spi, OMAP2_MCSPI_CHCTRL0);
 }
-#ifndef TEDCHO_IPC
+// ebs
+#ifndef TEDCHO_IPC  // by eunae.kim SPI clock issue 2010.01.07
 
 static void omap2_mcspi_set_dma_req_both(const struct spi_device *spi,
 		int is_read, int enable)
@@ -303,7 +304,7 @@ static void omap2_mcspi_set_dma_req_both(const struct spi_device *spi,
 }
 #endif
 
-
+// ebs
 static void omap2_mcspi_force_cs(struct spi_device *spi, int cs_active)
 {
 	u32 l;
@@ -583,17 +584,31 @@ omap2_mcspi_txrx_dma(struct spi_device *spi, struct spi_transfer *xfer)
 				mcspi_write_cs_reg(spi, OMAP2_MCSPI_TX0, 0);
 		}
 	}
-
+#if 1 //  DMA priority set
  omap_dma_set_global_params(DMA_DEFAULT_ARB_RATE, 0x20, 1); // SPI_IPC
  omap_dma_set_prio_lch(mcspi_dma->dma_tx_channel, 0, DMA_CH_PRIO_HIGH);  
  omap_dma_set_prio_lch(mcspi_dma->dma_rx_channel, DMA_CH_PRIO_HIGH, 0); 
+ // omap_set_dma_prefetch(mcspi_dma->dma_tx_channel, 1); 
+ // omap_set_dma_write_mode(mcspi_dma->dma_tx_channel, OMAP_DMA_WRITE_POSTED);
+#endif
 
+// ebs
 #ifndef TEDCHO_IPC
 if( (tx != NULL) && (rx != NULL) )
 {
+	//omap_start_dma_pre(mcspi_dma->dma_tx_channel);
+	//omap_start_dma_pre(mcspi_dma->dma_rx_channel);	
+	//omap_start_dma_post(mcspi_dma->dma_tx_channel, mcspi_dma->dma_rx_channel);	
+
+
 	omap_start_dma(mcspi_dma->dma_tx_channel);
 	omap_start_dma(mcspi_dma->dma_rx_channel);
+	
+	//omap2_mcspi_set_dma_req(spi, 1, 1);
+	//omap2_mcspi_set_dma_req(spi, 0, 1);
 	omap2_mcspi_set_dma_req_both(spi, 1, 1);
+
+	
 }
 else
 {
@@ -619,6 +634,7 @@ else
 	}
 #endif
 
+// ebs
 	if (tx != NULL) {
 		wait_for_completion(&mcspi_dma->dma_tx_completion);
 
@@ -1122,7 +1138,7 @@ static void omap2_mcspi_work(struct work_struct *work)
 	if (omap2_mcspi_enable_clocks(mcspi) < 0)
 		return;
 		
-	wake_lock_timeout(&spi_lock, 1*HZ);
+	wake_lock_timeout(&spi_lock, 1*HZ);	//20110419 TI cliff.lee
 
 	spin_lock_irq(&mcspi->lock);
 
@@ -1251,7 +1267,7 @@ static void omap2_mcspi_work(struct work_struct *work)
 	spin_unlock_irq(&mcspi->lock);
 
 	omap2_mcspi_disable_clocks(mcspi);
-	wake_unlock(&spi_lock);
+	wake_unlock(&spi_lock);	//20110419 TI cliff.lee	
 }
 
 static int omap2_mcspi_transfer(struct spi_device *spi, struct spi_message *m)
@@ -1553,7 +1569,7 @@ static int __init omap2_mcspi_init(void)
 	if (omap2_mcspi_wq == NULL)
 		return -1;
 
-	wake_lock_init(&spi_lock, WAKE_LOCK_SUSPEND, "spi_wake_lock");
+	wake_lock_init(&spi_lock, WAKE_LOCK_SUSPEND, "spi_wake_lock");	//20110419 TI cliff.lee
 	return platform_driver_probe(&omap2_mcspi_driver, omap2_mcspi_probe);
 }
 subsys_initcall(omap2_mcspi_init);
@@ -1563,7 +1579,7 @@ static void __exit omap2_mcspi_exit(void)
 	platform_driver_unregister(&omap2_mcspi_driver);
 
 	destroy_workqueue(omap2_mcspi_wq);
-	wake_lock_destroy(&spi_lock);
+	wake_lock_destroy(&spi_lock);	//20110419 TI cliff.lee
 }
 module_exit(omap2_mcspi_exit);
 

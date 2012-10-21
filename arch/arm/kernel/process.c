@@ -215,7 +215,6 @@ __setup("reboot=", reboot_setup);
 void machine_halt(void)
 {
 #ifdef CONFIG_SMP
-
 #endif
 
 	printk(KERN_EMERG "System halted, OK to turn off power\n");

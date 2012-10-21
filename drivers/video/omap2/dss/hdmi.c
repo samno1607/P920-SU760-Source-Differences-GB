@@ -147,9 +147,12 @@ enum hdmi_s3d_frame_structure {
 	HDMI_S3D_L_DEPTH                = 4,
 	HDMI_S3D_L_DEPTH_GP_GP_DEPTH    = 5,
 	HDMI_S3D_SIDE_BY_SIDE_HALF      = 8
-	
 	,
 	HDMI_S3D_TOP_AND_BOTTOM			= 6,
+		//HDMI 1.4a 3D video format extension.
+		//Vendor Specific InfoFrame packet PB5 Significant Nibble 3D_Structure
+		//		0110 : Top and Bottom
+		//		1000 : Side-by-Side (Half)
 };
 
 /* Subsampling types used for Sterioscopic 3D over HDMI. Below HOR
@@ -199,9 +202,7 @@ static const struct omap_video_timings all_timings_direct[] = {
 	{1440, 288, 27000, 126, 24, 138, 3, 2, 19},
 	{1920, 540, 74250, 44, 528, 148, 5, 2, 15},
 	{1920, 540, 74250, 44, 88, 148, 5, 2, 15},
-
 	{1920, 1080, 148500, 44, 88, 148, 5, 4, 36},
-
 	{720, 576, 27000, 64, 12, 68, 5, 5, 39},
 	{1440, 576, 54000, 128, 24, 136, 5, 5, 39},
 	{1920, 1080, 148500, 44, 528, 148, 5, 4, 36},
@@ -311,7 +312,6 @@ struct hdmi {
 	struct hdmi_config cfg;
 	struct omap_display_platform_data *pdata;
 	struct platform_device *pdev;
-	
 	bool s3d_switch_support;
 } hdmi;
 
@@ -421,7 +421,7 @@ static ssize_t hdmi_yuv_set(struct device *dev,
 	return r ? : size;
 }
 
-
+/* hdmi out sys interface */
 static ssize_t hdmi_state_show(struct device *dev,
                 struct device_attribute *attr, char *buf)
 {
@@ -502,7 +502,8 @@ static ssize_t hdmi_key_set(struct device *dev,
 	return size;
 }
 /* hdmi drm lock sys interface */
-unsigned int drm_lock = 0;
+//static int drm_lock = 0;
+unsigned int drm_lock = 0; // novashock.lee patch for DRM LOCK 2011-03-15
 static ssize_t hdmi_drm_lock_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -522,7 +523,8 @@ static ssize_t hdmi_drm_lock_set(struct device *dev,
 		if((++drm_lock) == 1)
 				ret = kobject_uevent(&dssdev->dev.kobj,KOBJ_ONLINE);
 			
-       }else if(drm_lock){
+//	}else{
+       }else if(drm_lock){		// novashock.lee patch for DRM LOCK 2011-03-15
 		if((--drm_lock) == 0)
 				ret = kobject_uevent(&dssdev->dev.kobj,KOBJ_OFFLINE);
 	}
@@ -545,7 +547,6 @@ static ssize_t hdmi_drm_usr_sel_set(struct device *dev,
 
 	return size;		
 }
-
 
 static ssize_t hdmi_deepcolor_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -660,14 +661,12 @@ static ssize_t hdmi_code_show(struct device *dev,
 
 static DEVICE_ATTR(edid, S_IRUGO, hdmi_edid_show, hdmi_edid_store);
 static DEVICE_ATTR(yuv, S_IRUGO | S_IWUSR, hdmi_yuv_supported, hdmi_yuv_set);
-
 static DEVICE_ATTR(hdmi_state, S_IRUGO | S_IWUSR, hdmi_state_show, NULL);
 static DEVICE_ATTR(hdmi_out, S_IRUGO | S_IWUSR, hdmi_out_show, hdmi_out_set);
 static DEVICE_ATTR(hdmi_source, S_IRUGO | S_IWUSR, hdmi_source_show, hdmi_source_set);
 static DEVICE_ATTR(hdmi_key, S_IRUGO | S_IWUSR, hdmi_key_show, hdmi_key_set);
 static DEVICE_ATTR(hdmi_drm_lock, S_IRUGO | S_IWUSR, hdmi_drm_lock_show, hdmi_drm_lock_set);
 static DEVICE_ATTR(hdmi_drm_usr_sel, S_IRUGO | S_IWUSR, hdmi_drm_usr_sel_show, hdmi_drm_usr_sel_set);
-
 static DEVICE_ATTR(deepcolor, S_IRUGO | S_IWUSR, hdmi_deepcolor_show,
 							hdmi_deepcolor_store);
 static DEVICE_ATTR(lr_fr, S_IRUGO | S_IWUSR, hdmi_lr_fr_show, hdmi_lr_fr_store);
@@ -728,9 +727,7 @@ static int hdmi_ioctl(struct inode *inode, struct file *file,
 	switch (cmd) {
 	case HDMI_ENABLE:
 		hdmi_enable_video(dssdev);
-		
 		is_hdmi_on = true;
-		
 		break;
 	case HDMI_DISABLE:
 		hdmi_disable_video(dssdev);
@@ -1039,10 +1036,7 @@ static void hdmi_panel_remove(struct omap_dss_device *dssdev)
 
 static bool hdmi_panel_is_enabled(struct omap_dss_device *dssdev)
 {
-
 	return (video_power == HDMI_POWER_FULL) && (hdmi_plug_stat);
-
-
 }
 
 static int hdmi_panel_enable(struct omap_dss_device *dssdev)
@@ -1079,12 +1073,10 @@ static void hdmi_enable_clocks(int enable)
 		dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1 | DSS_CLK_54M |
 				DSS_CLK_96M);
 }
-
 bool hdmi_state(void)
 {
 	return (video_power == HDMI_POWER_FULL)&&hdmi_plug_stat;
 }
-
 static struct omap_dss_driver hdmi_driver = {
 	.probe		= hdmi_panel_probe,
 	.remove		= hdmi_panel_remove,
@@ -1123,7 +1115,6 @@ int hdmi_init(struct platform_device *pdev)
 	hdmi_s3d.subsamp = false;
 	hdmi_s3d.subsamp_pos = 0;
 	hdmi.s3d_enabled = false;
-	
 	hdmi.s3d_switch_support = false;
 
 	hdmi.pdata = pdev->dev.platform_data;
@@ -1134,7 +1125,6 @@ int hdmi_init(struct platform_device *pdev)
 	mutex_init(&hdmi.lock_aux);
 
 	hdmi_mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-
 	if(!hdmi_mem) {
                 ERR("can't alloc hdmi_mem\n");
                 return -ENOMEM;
@@ -1221,7 +1211,7 @@ static int hdmi_power_on(struct omap_dss_device *dssdev)
 	if (!custom_set) {
 		code = get_timings_index();
 
-  		HDMI_W1_SetWaitSoftReset();
+  		HDMI_W1_SetWaitSoftReset(); // 2011-03-19 novashock.lee READ EDID Fail patch. //
 		DSSDBG("No edid set thus will be calling hdmi_read_edid");
 		r = hdmi_read_edid(p);
 		if (r) {
@@ -1436,6 +1426,7 @@ static int hdmi_audio_power_off(void)
 retry:
 	/* wait for audio to suspend */
 	if (audio_on) {
+//		mutex_unlock(&hdmi.lock_aux);
 
 
 		/* signal suspend request to audio */
@@ -1445,6 +1436,7 @@ retry:
 		res = wait_event_interruptible_timeout(audio_wq,
 			!audio_on, msecs_to_jiffies(1000));
 
+//		mutex_lock(&hdmi.lock_aux);
 		if (res <= 0) {
 			printk(KERN_ERR "HDMI audio power is not released within 1sec\n");
 			return -EBUSY;
@@ -1577,9 +1569,7 @@ static void hdmi_work_queue(struct work_struct *ws)
 		 */
 		memset(&dssdev->panel.timings, 0,
 						sizeof(dssdev->panel.timings));
-
 		hdmi_plug_stat = 0;
-
 		/* turn audio power off */
 		notify = !audio_on; /* notification is sent if audio is on */
 		hdmi_audio_power_off();
@@ -1602,6 +1592,10 @@ static void hdmi_work_queue(struct work_struct *ws)
 
 		DSSINFO("Display disabled\n");
 		HDMI_W1_StopVideoFrame(HDMI_WP);
+#if 0		
+		if (dssdev->platform_disable)
+			dssdev->platform_disable(dssdev);
+#endif		
 			dispc_enable_digit_out(0);
 
 		if (hdmi.hdmi_stop_frame_cb)
@@ -1645,9 +1639,7 @@ static void hdmi_work_queue(struct work_struct *ws)
 
 		if (!user_hpd_state && (hdmi_power == HDMI_POWER_FULL))
 			set_hdmi_hot_plug_status(dssdev, true);
-
 		hdmi_plug_stat = 1;
-
 	}
 
 	if ((action & HDMI_CONNECT) && (video_power == HDMI_POWER_MIN) &&
@@ -1690,9 +1682,7 @@ static void hdmi_work_queue(struct work_struct *ws)
 			goto done;
 		custom_set = false;
 		DSSINFO("Physical Connect Done:\n\n");
-		
 		is_hdmi_on = true;
-		
 	}
 
 done:
@@ -1811,10 +1801,15 @@ static irqreturn_t hdmi_irq_handler(int irq, void *arg)
 		hdmi_enable_clocks(1);
 	if (r & HDMI_CONNECT)
 		hdmi_connected = true;
-
+#if 1
 	if (r & HDMI_DISCONNECT)
 		hdmi_connected = false;
-
+#else
+	if (r & HDMI_DISCONNECT){
+		spin_unlock_irqrestore(&irqstatus_lock, flags);	
+		return IRQ_HANDLED;
+	}
+#endif
 	spin_unlock_irqrestore(&irqstatus_lock, flags);
 
 	hdmi_handle_irq_work(r | in_reset);
@@ -2024,7 +2019,6 @@ int hdmi_set_audio_power(bool _audio_on)
 	return r;
 }
 
-
 int hdmi_set_audio_power_off(void)
 {
 	struct omap_dss_device *dssdev = get_hdmi_device();
@@ -2040,7 +2034,6 @@ int hdmi_set_audio_power_off(void)
 
 	return r;
 }
-
 
 static int hdmi_enable_hpd(struct omap_dss_device *dssdev)
 {
@@ -2121,6 +2114,7 @@ static int hdmi_reset(struct omap_dss_device *dssdev,
 	}
 	if (phase & OMAP_DSS_RESET_ON) {
 		if (hdmi_power == HDMI_POWER_FULL) {
+		//if (in_reset == HDMI_POWER_FULL) {
 			r = hdmi_reconfigure(dssdev);
 			hdmi_notify_pwrchange(HDMI_EVENT_POWERPHYON);
 			in_reset = 0;
@@ -2137,7 +2131,6 @@ static int hdmi_reset(struct omap_dss_device *dssdev,
 static int hdmi_suspend_video(struct omap_dss_device *dssdev)
 {
 	int ret = 0;
-	
 
 	DSSDBG("hdmi_suspend_video\n");
 
@@ -2155,14 +2148,12 @@ static int hdmi_suspend_video(struct omap_dss_device *dssdev)
 	mutex_unlock(&hdmi.lock_aux);
 	mutex_unlock(&hdmi.lock);
 
-	
 	return ret;
 }
 
 static int hdmi_resume_video(struct omap_dss_device *dssdev)
 {
 	int ret = 0;
-	
 
 	DSSDBG("hdmi_resume_video\n");
 
@@ -2187,7 +2178,6 @@ static int hdmi_resume_video(struct omap_dss_device *dssdev)
 	}
 	mutex_unlock(&hdmi.lock);
 
-	
 	return ret;
 }
 
@@ -2241,9 +2231,8 @@ static void hdmi_set_custom_edid_timing_code(struct omap_dss_device *dssdev,
 		hdmi.code = code;
 		hdmi.mode = mode;
 		custom_set = 1;
-
+		//hdmi_reset(dssdev, OMAP_DSS_RESET_BOTH);
 		hdmi_reset(dssdev, OMAP_DSS_RESET_ON);
-
 	}
 }
 
@@ -2474,10 +2463,10 @@ static int hdmi_set_s3d_disp_type(struct omap_dss_device *dssdev,
 	switch (info->type) {
 	case S3D_DISP_OVERUNDER:
 		if (info->sub_samp == S3D_DISP_SUB_SAMPLE_NONE) {
-			
+//			tinfo.structure = HDMI_S3D_FRAME_PACKING;
+//			r = 0;
 			tinfo.structure = HDMI_S3D_TOP_AND_BOTTOM;
 			r = 0;
-			
 		} else {
 			goto err;
 		}
@@ -2511,7 +2500,6 @@ static int hdmi_enable_s3d(struct omap_dss_device *dssdev, bool enable)
 	mutex_lock(&hdmi.lock_aux);
 	if (hdmi.s3d_enabled == enable)
 		goto done;
-	
 	if ( !hdmi.s3d_switch_support )
 	{
 		printk("HDMI doesn't support s3d switching\n");
@@ -2521,11 +2509,10 @@ static int hdmi_enable_s3d(struct omap_dss_device *dssdev, bool enable)
 	printk("hdmi_enable_s3d(%d)\n", enable);
 	printk("HDMI suport s3d swithcing swithcing to sample(%d), structure(%d), pos(%d)\n",
 			hdmi_s3d.subsamp, hdmi_s3d.structure, hdmi_s3d.subsamp_pos);
-	
 
 	dssdev->panel.s3d_info.type = S3D_DISP_NONE;
 	hdmi.s3d_enabled = enable;
-
+	//r = hdmi_reset(dssdev, OMAP_DSS_RESET_BOTH);
 	r = hdmi_reset(dssdev, OMAP_DSS_RESET_ON);
 
 	/* hdmi.s3d_enabled will be updated when powering display up */
@@ -2546,7 +2533,6 @@ static int hdmi_enable_s3d(struct omap_dss_device *dssdev, bool enable)
 				dssdev->panel.s3d_info.sub_samp =
 							S3D_DISP_SUB_SAMPLE_H;
 			break;
-		
 		case HDMI_S3D_TOP_AND_BOTTOM:
 		default:
 			dssdev->panel.s3d_info.type = S3D_DISP_OVERUNDER;
@@ -2593,7 +2579,6 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 		DSSERR("failed to create sysfs file\n");
 	if (device_create_file(&dssdev->dev, &dev_attr_yuv))
 		DSSERR("failed to create sysfs file\n");
-
     if (device_create_file(&dssdev->dev, &dev_attr_hdmi_state))
         DSSERR("failed to create sysfs file\n");
 	if (device_create_file(&dssdev->dev, &dev_attr_hdmi_out))
@@ -2606,7 +2591,6 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 		DSSERR("failed to create sysfs file\n");
 	if (device_create_file(&dssdev->dev, &dev_attr_hdmi_drm_usr_sel))
 		DSSERR("failed to create sysfs file\n");
-
 
 	if (device_create_file(&dssdev->dev, &dev_attr_deepcolor))
 		DSSERR("failed to create sysfs file\n");
@@ -2622,7 +2606,6 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 
 static int hdmi_read_edid(struct omap_video_timings *dp)
 {
-
 	int r = 0, ret=0, code=0;
 
 	memset(edid, 0, HDMI_EDID_MAX_LENGTH);
@@ -2634,7 +2617,6 @@ static int hdmi_read_edid(struct omap_video_timings *dp)
 		printk(KERN_WARNING "HDMI failed to read E-EDID\n");
 	} else {
 		if (!memcmp(edid, header, sizeof(header))) {
-			
 			hdmi.s3d_switch_support = hdmi_s3d_supported(edid);
 			if (hdmi.s3d_enabled) {
 				/* Update flag to convey if sink supports 3D */
@@ -2649,11 +2631,9 @@ static int hdmi_read_edid(struct omap_video_timings *dp)
 	if (!edid_set) {
 		DSSDBG("fallback to VGA\n");
 
-
-		hdmi.code = -1;
+		hdmi.code = -1; //4; /*setting default value of 640 480 VGA*/ 
 		hdmi.mode = 0;
 	}
-
 	if (hdmi.s3d_enabled && hdmi_s3d.structure == HDMI_S3D_FRAME_PACKING)
 		code = get_s3d_timings_index();
 	else

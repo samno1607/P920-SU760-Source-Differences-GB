@@ -24,7 +24,6 @@
 #endif
 #include "power.h"
 
-
 #include <linux/rtc.h> 
 
 enum {
@@ -34,11 +33,9 @@ enum {
 	DEBUG_EXPIRE = 1U << 3,
 	DEBUG_WAKE_LOCK = 1U << 4,
 };
-
 //static int debug_mask = DEBUG_EXIT_SUSPEND | DEBUG_WAKEUP;
 static int debug_mask = DEBUG_SUSPEND| DEBUG_EXIT_SUSPEND | DEBUG_WAKEUP;
-//static int debug_mask = DEBUG_SUSPEND| DEBUG_EXIT_SUSPEND | DEBUG_WAKEUP | DEBUG_EXPIRE;
-
+//static int debug_mask = DEBUG_SUSPEND| DEBUG_EXIT_SUSPEND | DEBUG_WAKEUP | DEBUG_EXPIRE;  //[20110131:geayoung.baek] suspend,resume monitoring
 
 module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 
@@ -267,7 +264,6 @@ long has_wake_lock(int type)
 	return ret;
 }
 
-
 static void print_active_locks_debug(void)
 {
 	struct wake_lock *lock;
@@ -289,8 +285,6 @@ static void print_active_locks_debug(void)
 	pr_info("===== debug info =====\n\n");	
 	spin_unlock_irqrestore(&list_lock, irqflags);
 }
-
-
 
 
 
@@ -325,12 +319,22 @@ int kill_abnormal_active_locks(int type)
 	BUG_ON(type >= WAKE_LOCK_TYPE_COUNT);
 	list_for_each_entry(abnormal_lock, &active_wake_locks[type], link) {
 		if (abnormal_lock->flags & WAKE_LOCK_AUTO_EXPIRE) {
-			;
+			long timeout = abnormal_lock->expires - jiffies;
+			if (timeout > 0)
+			{
+				//pr_info("abnormal active wake lock %s, time left %ld\n",
+				//	abnormal_lock->name, timeout);
+			}
+			else if (print_expired)
+			{
+				//pr_info("abnormal wake lock %s, expired\n", abnormal_lock->name);
+			}
 		} else {
-			if(strcmp(abnormal_lock->name, "main") == 0)
+			if(strcmp(abnormal_lock->name, "main") == 0)	//if(abnormal_lock->name =="main") 
 			{
 				long timeout = abnormal_lock->expires - jiffies;
 				if (abnormal_lock->flags & WAKE_LOCK_ACTIVE) {
+					//pr_info("type=0x%x, timeout=%ld, abnormal_lock->expires=%ld, jiffies=%ld\n", abnormal_lock->flags, timeout, abnormal_lock->expires, jiffies);
 					if (timeout <= 0)
 					{			
 						ret = 0;
@@ -355,6 +359,8 @@ long find_abnormal_wake_lock(int type)
 	long ret;
 	unsigned long irqflags;
 
+	//print_active_locks_debug();
+		
 	spin_lock_irqsave(&list_lock, irqflags);
 
 	ret = has_wake_lock_locked(type);	
@@ -362,7 +368,6 @@ long find_abnormal_wake_lock(int type)
 	spin_unlock_irqrestore(&list_lock, irqflags);
 	return ret;
 }
-
 
 static void suspend(struct work_struct *work)
 {
@@ -595,12 +600,10 @@ void wake_unlock(struct wake_lock *lock)
 	lock->flags &= ~(WAKE_LOCK_ACTIVE | WAKE_LOCK_AUTO_EXPIRE);
 	list_del(&lock->link);
 
-
 	if((debug_mask & DEBUG_SUSPEND) && (strcmp (lock->name, "main") == 0))
 	{
 		pr_info("\nunlock type=0x%x, expires=%ld\n\n", lock->flags, lock->expires);
 	}
-
 
 	list_add(&lock->link, &inactive_locks);
 	if (type == WAKE_LOCK_SUSPEND) {

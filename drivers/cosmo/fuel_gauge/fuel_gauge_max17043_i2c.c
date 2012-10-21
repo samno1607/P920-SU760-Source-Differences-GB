@@ -123,7 +123,6 @@ int max17043_reference_graph(int __x, battery_graph_prop* ref_battery_graph, int
 
 	__y = (__x* slope + const_term);
 
-	
 	if(error_range)
 	{
 		*error_range = slope * (FUEL_GAUGE_VOLT_ERROR_RANGE) / (*error_range);
@@ -185,12 +184,10 @@ int max17043_validate_gauge_value(int voltage, int capacity)
 	if( (capacity < calculated_soc + error_range) && (capacity > calculated_soc - error_range) )
 	{
 		D(" ##### SOC & CALCULATED SOC is met  ##########");
-		
 		return 1;
 	}
 
 	D(" ##### SOC & CALCULATED SOC is NOT met 1!!!  ##########");
-	
 	return 0;
 
 }
@@ -234,6 +231,7 @@ static int max17043_write_reg(struct i2c_client *client, int reg, u16 value)
 	}
 	else
 	{
+/* FIXME: <jongho3.lee>*/
 	value = ((value & 0xFF00) >> 8) | ((value & 0xFF) << 8);
 
 	while(retry--) {
@@ -243,7 +241,6 @@ static int max17043_write_reg(struct i2c_client *client, int reg, u16 value)
 		{
 			dev_err(&client->dev, "%s: err %d\n", __func__, ret);
 			D("MAX17043 I2C WRITE ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			
 			msleep(1);
 		}
 		else
@@ -283,17 +280,30 @@ static int max17043_read_reg(struct i2c_client *client, int reg)
 	{
 	while(retry--) {
 		D("MAX17043 I2C READ REG@@@@@@@@@@@@@@");
+#if 1
 		ret = i2c_smbus_read_word_data(client, reg);
 		//max17043_write_reg(client, MAX17043_CONFIG_REG, reference->config);
 		if (ret < 0)
 		{
 			dev_err(&client->dev, "%s: err %d\n", __func__, ret);
 			D("MAX17043 I2C READ ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			
 			msleep(1);
 		}
 		else
 			break;
+#else
+		//client->flags = 0;
+		ret = max17043_i2c_read(client->adapter, client->addr, (u8)reg, 2, data);
+		//ret = i2c_smbus_read_block_data(client, (u8)reg, data);
+		if(data[0] < 0 || data[1] < 0 )
+		{
+			dev_err(&client->dev, "%s: err %d\n", __func__, ret);
+			D("MAX17043 I2C READ ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+			msleep(1);
+		}
+		else
+			break;
+#endif
 		}
 	}
 	mutex_unlock(&fuel_update_lock);
@@ -301,7 +311,11 @@ static int max17043_read_reg(struct i2c_client *client, int reg)
 	if(ret < 0)
 		return ret;
 
+#if 1
 	return ((ret & 0xFF00) >> 8) | ((ret & 0xFF) << 8);
+#else
+	return (((u16)data[0]) << 8) | ((u16)data[1]);
+#endif
 }
 static int max17043_reset(struct i2c_client *client)
 {
@@ -619,7 +633,6 @@ static int max17043_update(void)
 	if(ret < 0)
 		return ret;
 
-	
 
 	ret = max17043_read_vcell(client);
 	if(ret < 0)
@@ -661,6 +674,7 @@ int max17043_update_by_other(void)
 		return -1;
 	}
 
+//FIXME  --> work
 	charger_schedule_delayed_work(&reference->gauge_work, 0);
 	return 0;
 }
@@ -689,6 +703,33 @@ static irqreturn_t max17043_interrupt_handler(int irq, void *data)
 #endif
 	return IRQ_HANDLED;
 }
+#if 0	// B-Project Does not use fuel gauge as a battery driver
+/* sysfs(power_supply) interface : for Android Battery Service [START] */
+static enum power_supply_property max17043_battery_props[] = {
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CAPACITY,
+};
+static int max17043_get_property(struct power_supply *psy,
+			    enum power_supply_property psp,
+			    union power_supply_propval *val)
+{
+	struct max17043_chip *chip = container_of(psy,
+				struct max17043_chip, battery);
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = chip->voltage;
+		break;
+	case POWER_SUPPLY_PROP_CAPACITY:
+		val->intval = chip->capacity;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+/* sysfs interface : for Android Battery Service [END] */
+#endif
 /* sysfs interface : for AT Commands [START] */
 ssize_t max17043_show_soc(struct device *dev,
 			 struct device_attribute *attr,
@@ -750,7 +791,6 @@ ssize_t max17043_store_status(struct device *dev,
 }
 DEVICE_ATTR(state, 0664, max17043_show_status, max17043_store_status);
 /* sysfs interface : for AT Commands [END] */
-
 
 int max17043_get_ui_capacity(void)
 {
@@ -905,12 +945,14 @@ static int __devinit max17043_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, chip);
 
+	// sysfs path : /sys/devices/platform/i2c_omap.2/i2c-2/2-0036/soc
 	ret = device_create_file(&client->dev, &dev_attr_soc);
 	if (ret < 0) {
 		pr_err("%s:File device creation failed: %d\n", __func__, ret);
 		ret = -ENODEV;
 		goto err_create_file_soc_failed;
 	}
+	// sysfs path : /sys/devices/platform/i2c_omap.2/i2c-2/2-0036/state
 	ret = device_create_file(&client->dev, &dev_attr_state);
 	if (ret < 0) {
 		pr_err("%s:File device creation failed: %d\n", __func__, ret);
@@ -933,7 +975,14 @@ static int __devinit max17043_probe(struct i2c_client *client,
 
 	max17043_read_version(client);
 	max17043_read_config(client);
-
+#if 0
+	max17043_set_rcomp(RCOMP_BL44JN);
+	if(need_to_quickstart == -1) {
+		max17043_quickstart();
+		need_to_quickstart = 0;
+		return 0;
+	} else
+#endif
 	{
 		charger_schedule_delayed_work(&chip->gauge_work, 0);
 		max17043_clear_interrupt(client);
@@ -944,6 +993,10 @@ static int __devinit max17043_probe(struct i2c_client *client,
 err_create_file_state_failed:
 	device_remove_file(&client->dev, &dev_attr_soc);
 err_create_file_soc_failed:
+#if 0	// B-Project. Does not use fuel gauge as a battery driver
+err_power_supply_register_failed:
+	i2c_set_clientdata(client, NULL);
+#endif
 	kfree(chip);
 	disable_irq_wake(gpio_to_irq(GAUGE_INT));
 err_request_wakeup_irq_failed:
@@ -959,6 +1012,7 @@ static int __devexit max17043_remove(struct i2c_client *client)
 {
 	struct max17043_chip *chip = i2c_get_clientdata(client);
 
+	//power_supply_unregister(&chip->battery);
 	flush_delayed_work(&chip->alert_work);
 	i2c_set_clientdata(client, NULL);
 	kfree(chip);

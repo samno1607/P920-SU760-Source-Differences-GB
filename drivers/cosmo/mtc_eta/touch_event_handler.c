@@ -21,7 +21,9 @@
 #include <linux/input.h>
 #include <linux/workqueue.h>
 
+//alexfed begin: 20101125 avoild kmalloc/kfree compiling error
 #include <linux/slab.h>
+//alexfed end: 20101125 avoild kmalloc/kfree compiling error
 
 #include "lge_mtc_eta.h"
 
@@ -196,6 +198,8 @@ static void mtc_eta_event_log_event(struct input_handle *handle, unsigned int ty
 					touch_state = TOUCH_STATE_DOWN;
 					break;
 				case ABS_MT_POSITION_X:
+					//touch_event.x = value * 1000l / 2055; // 2.055 = 986(max X)/480(width)
+					//for Cosmo
 					touch_event.x = value * 1000l / 2334; // 2.334 = 1120(max X)/480(width)
 #ifdef MTC_ETA_DEBUG
 					if (touch_state != TOUCH_STATE_DOWN) {
@@ -204,6 +208,8 @@ static void mtc_eta_event_log_event(struct input_handle *handle, unsigned int ty
 #endif
 					break;
 				case ABS_MT_POSITION_Y:
+					//touch_event.y = value * 1000 / 2055; // 2.055 = 1644(max Y)/800(height)
+					//for Cosmo
 					touch_event.y = value * 1000 / 2365; // 2.365 = 1892(max Y)/800(height)
 #ifdef MTC_ETA_DEBUG
 					if (touch_state != TOUCH_STATE_DOWN) {

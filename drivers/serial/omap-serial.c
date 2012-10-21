@@ -38,12 +38,15 @@
 #include <plat/dma.h>
 #include <plat/dmtimer.h>
 #include <plat/omap-serial.h>
+//dennis.oh 20110124 TI OPP patch [start]
 #include <plat/control.h>
 
 #include "../../arch/arm/mach-omap2/mux.h"
+#include <mach/omap4-common.h>
 
 
 #define OMAP44XX_DMA4_BASE		(L4_44XX_BASE + 0x56000)
+//dennis.oh 20110124 TI OPP patch [end]
 
 static struct uart_omap_port *ui[OMAP_MAX_HSUART_PORTS];
 static struct wake_lock uart_lock;
@@ -152,10 +155,12 @@ static void serial_omap_stop_rx(struct uart_port *port)
 	up->port.read_status_mask &= ~UART_LSR_DR;
 	serial_out(up, UART_IER, up->ier);
 
+//dennis.oh 20110124 TI OPP patch [start]
 	/*Disable the UART CTS wakeup for UART1,UART2*/
 	if ((!port->suspended && (((up->pdev->id) == UART1) ||
 			((up->pdev->id) == UART2))))
 		omap4_uart_cts_wakeup((up->pdev->id), 0);
+//dennis.oh 20110124 TI OPP patch [end]
 }
 
 static inline void
@@ -332,6 +337,9 @@ static void serial_omap_start_tx(struct uart_port *port)
 				up->uart_dma.tx_buf_size, 1,
 				OMAP_DMA_SYNC_ELEMENT,
 				up->uart_dma.uart_dma_tx, 0);
+	/* FIXME: Cache maintenance needed here? */
+//	wmb();		//dennis.oh 20110128 TI opp-a2dp release 
+//	printk("serial_omap_start_tx -up->uart_dma.tx_dma_channel - %d\n", up->uart_dma.tx_dma_channel);
 	omap_start_dma(up->uart_dma.tx_dma_channel);
 }
 
@@ -379,11 +387,10 @@ static inline irqreturn_t serial_omap_irq(int irq, void *dev_id)
 	unsigned int iir, lsr;
 	unsigned long flags;
 
-
-
+//	if (omap_is_console_port(&up->port))
+//		wake_lock_timeout(&uart_lock, 5 * HZ);
 	if (omap_is_console_port(&up->port))
 		wake_lock_timeout(&uart_lock, 2.5 * HZ);
-
 
 #ifdef CONFIG_PM
 	/*
@@ -499,8 +506,13 @@ static int serial_omap_startup(struct uart_port *port)
 	unsigned long flags = 0;
 	int retval;
 
+	if ((up->pdev->id) != UART4)
+		dpll_cascading_blocker_hold(port->dev);
+	
+//dennis.oh 20110124 TI OPP patch [start]
 	if ((up->pdev->id) == UART2)
 		omap4_uart_cts_wakeup((up->pdev->id), 1);
+//dennis.oh 20110124 TI OPP patch [end]
 	/*
 	 * Allocate the IRQ
 	 */
@@ -613,6 +625,9 @@ static void serial_omap_shutdown(struct uart_port *port)
 		serial_out(up, UART_OMAP_SYSC, tmp); /* force-idle */
 	}
 	free_irq(up->port.irq, up);
+
+	if ((up->pdev->id) != UART4)
+		dpll_cascading_blocker_release(port->dev);
 }
 
 static inline void
@@ -794,6 +809,7 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	serial_out(up, UART_LCR, OMAP_UART_LCR_CONF_MDB);
 
 	if (up->use_dma) {
+//dennis.oh 20110128 TI opp-a2dp release [start]
 #ifdef DMA_FOR_UART2
 		if (up->uart_dma.tx_threshold) {
 			serial_out(up, UART_MDR3,
@@ -802,6 +818,7 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 					TX_FIFO_THR_LVL);
 		}
 #endif
+//dennis.oh 20110128 TI opp-a2dp release [end]
 		serial_out(up, UART_TI752_TLR, 0);
 		serial_out(up, UART_OMAP_SCR,
 			(UART_FCR_TRIGGER_4 | UART_FCR_TRIGGER_8));
@@ -981,7 +998,10 @@ serial_omap_console_write(struct console *co, const char *s,
 	unsigned long flags;
 	unsigned int ier;
 	int locked = 1;
+	extern bool in_dpll_cascading;
 
+	if( in_dpll_cascading ) return;
+	
 	local_irq_save(flags);
 	if (up->port.sysrq)
 		locked = 0;
@@ -1113,10 +1133,10 @@ static int serial_omap_resume(struct platform_device *dev)
 	if (up == NULL)
 		return -ENOMEM;
 
-
+//	if (omap_is_console_port(&up->port))
+//		wake_lock_timeout(&uart_lock, 5 * HZ);
 	if (omap_is_console_port(&up->port))
 		wake_lock_timeout(&uart_lock, 2.5 * HZ);
-
 
 	if (up)
 		uart_resume_port(&serial_omap_reg, &up->port);
@@ -1218,6 +1238,9 @@ static int serial_omap_start_rxdma(struct uart_omap_port *up)
 				up->uart_dma.uart_dma_rx, 0);
 	}
 	up->uart_dma.prev_rx_dma_pos = up->uart_dma.rx_buf_dma_phys;
+	/* FIXME: Cache maintenance needed here? */
+//	if (cpu_is_omap44xx())
+//	omap_writel(0, OMAP44XX_DMA4_BASE + OMAP_DMA4_CDAC(up->uart_dma.rx_dma_channel));
 	omap_start_dma(up->uart_dma.rx_dma_channel);
 	mod_timer(&up->uart_dma.rx_timer, jiffies +
 				usecs_to_jiffies(up->uart_dma.rx_timeout));
@@ -1258,6 +1281,8 @@ static void serial_omap_continue_tx(struct uart_omap_port *up)
 				up->uart_dma.tx_buf_size, 1,
 				OMAP_DMA_SYNC_ELEMENT,
 				up->uart_dma.uart_dma_tx, 0);
+	/* FIXME: Cache maintenance needed here? */
+//	wmb();		//dennis.oh 20110128 TI opp-a2dp release 
 	omap_start_dma(up->uart_dma.tx_dma_channel);
 }
 

@@ -39,8 +39,11 @@
 #include <linux/syslog.h>
 #include <linux/cpu.h>
 #include <linux/notifier.h>
+#include <linux/debugfs.h>
 
 #include <asm/uaccess.h>
+
+#include <mach/omap4-common.h>
 
 /*
  * for_each_console() allows you to iterate on each console
@@ -140,6 +143,11 @@ static struct console_cmdline console_cmdline[MAX_CMDLINECONSOLES];
 static int selected_console = -1;
 static int preferred_console = -1;
 int console_set_on_cmdline;
+
+
+u32 printk_disable_mode;
+static int printk_disable = 0;
+
 EXPORT_SYMBOL(console_set_on_cmdline);
 
 /* Flag: console code may call schedule() */
@@ -669,11 +677,63 @@ static int have_callable_console(void)
  */
 #ifdef CONFIG_PRINTK // Disable PRINTK in User Mode Build
 
+#if defined(CONFIG_DEBUG_FS)
+static int printk_option_get(void *data, u64 *val)
+{
+	u32 *option = data;
+
+	*val = printk_disable;
+
+	return 0;
+}
+
+static int printk_option_set(void *data, u64 val)
+{
+	u32 *option = data;
+
+	if (option == &printk_disable_mode) {
+		if(val == 1)
+		{
+			printk_disable = 1;
+		}
+		else
+		{
+			printk_disable = 0;
+		}
+	}
+
+	return 0;
+}
+
+
+DEFINE_SIMPLE_ATTRIBUTE(printk_dbg_option_fops, printk_option_get, printk_option_set, "%llu\n");
+
+
+static struct dentry *printk_debugfs_dir;
+
+static void printk_initialize_debugfs(void)
+{
+	printk_debugfs_dir = debugfs_create_dir("printkdebug", NULL);
+	if (IS_ERR(printk_debugfs_dir)) {
+		int err = PTR_ERR(printk_debugfs_dir);
+		printk_debugfs_dir = NULL;
+		return err;
+	}
+
+	(void) debugfs_create_file("printk_disable_mode", S_IRUGO | S_IWUSR, printk_debugfs_dir,
+				   &printk_disable_mode, &printk_dbg_option_fops);	
+
+}
+
+#endif
 asmlinkage int printk(const char *fmt, ...)
 {
 	va_list args;
 	int r;
 
+	if(printk_disable) return 0;   //[geayoung.baek]
+	if( in_dpll_cascading ) return 0;
+	
 #ifdef CONFIG_KGDB_KDB
 	if (unlikely(kdb_trap_printk)) {
 		va_start(args, fmt);
@@ -767,6 +827,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	unsigned long flags;
 	int this_cpu;
 	char *p;
+
+	if(printk_disable) return 0;   //[geayoung.baek]
+	if( in_dpll_cascading ) return 0;
 
 	boot_delay_msec();
 	printk_delay();
@@ -1094,6 +1157,9 @@ static struct notifier_block __cpuinitdata console_nb = {
 static int __init console_notifier_init(void)
 {
 	register_cpu_notifier(&console_nb);
+#if defined(CONFIG_DEBUG_FS)	
+	printk_initialize_debugfs();
+#endif
 	return 0;
 }
 late_initcall(console_notifier_init);

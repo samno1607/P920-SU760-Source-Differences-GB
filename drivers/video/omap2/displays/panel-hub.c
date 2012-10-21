@@ -1,7 +1,6 @@
 /*
  * HUB mipi interface support
  *
- * 
  */
 
 #include <linux/module.h>
@@ -665,6 +664,9 @@ static int hub_panel_probe(struct omap_dss_device *dssdev)
 			goto err3;
 		}
 
+#if 0 
+		pad_config(0x4A1001CC, 0xFEF8FFFF, 0x01030000);
+#endif
 		gpio_direction_input(gpio);
 
 		//r = request_irq(gpio_to_irq(gpio), hub_panel_te_isr,
@@ -1010,7 +1012,6 @@ err:
 	queue_delayed_work(td->esd_wq, &td->esd_work, HUB_PANEL_ESD_CHECK_PERIOD);
 }
 
-
 int barrier_init_hotkey(bool enable)
 {
 	// dummy
@@ -1040,7 +1041,7 @@ static struct omap_dss_driver hub_panel_driver = {
 #if defined(CONFIG_MACH_LGE_HUB_REV_A)
 		.name   = "russo_panel",
 #else
-		.name 	= "cosmo_hub_panel",	
+		.name 	= "cosmo_hub_panel",
 #endif
 		.owner  = THIS_MODULE,
 	},

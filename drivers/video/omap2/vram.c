@@ -99,6 +99,14 @@ static struct vram_region *omap_vram_create_region(unsigned long paddr,
 	return rm;
 }
 
+#if 0
+static void omap_vram_free_region(struct vram_region *vr)
+{
+	list_del(&vr->list);
+	kfree(vr);
+}
+#endif
+
 static struct vram_alloc *omap_vram_create_allocation(struct vram_region *vr,
 		unsigned long paddr, unsigned pages)
 {
@@ -569,7 +577,6 @@ void __init omap_vram_reserve_sdram(void)
 		}
 
 		paddr = virt_to_phys(alloc_bootmem_pages(size));
-		
 		if(paddr == NULL) return;
 		BUG_ON(paddr & ~PAGE_MASK);
 	}

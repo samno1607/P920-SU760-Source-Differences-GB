@@ -1,7 +1,6 @@
 #ifndef __ARCH_ARM_PLAT_OMAP_ERR_HANDLER_H
 #define __ARCH_ARM_PLAT_OMAP_ERR_HANDLER_H
 
-
 typedef enum
 {
 	 LGE_NVDATA_IQ_RESET_CAUSE_UNKNOWN = 0
@@ -32,20 +31,15 @@ typedef enum
 	,LGE_NVDATA_IQ_FACTORY_DATA_RESET			 //User-initiated master reset/clear to restore factory data to device
 } lge_nvdata_iq_reset_cause_t;
 
-
 extern int 	lge_is_force_ap_crash();
 extern int  lge_is_crash_dump_enabled();
 extern int lge_is_ap_crash_dump_enabled();
 extern void lge_mark_ap_crash();
-
 extern void lge_mark_cp_crash();
 extern int  lge_is_mark_cp_crash();
-
 extern void lge_dump_ap_crash();
 extern void lge_user_reset();
 
-
 extern void lge_store_ciq_reset(int is_ap, int cause);
-
 
 #endif

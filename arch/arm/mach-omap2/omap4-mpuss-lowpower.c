@@ -627,6 +627,7 @@ static inline void restore_l3instr_regs(void)
  *	3 - CPUx L1 and logic lost + GIC + L2 lost: MPUSS OFF
  */
 
+//kibum.lee
 extern int mpu_m3_clkctrl;
 extern int mpu_m3_clkctrl_count;
 
@@ -646,13 +647,12 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 		return;
 	}
 
-
 	if(power_state == PWRDM_POWER_OFF && gpio_get_value(16) == 0) 
 	{
 		printk("apds9900 low\n");
 		goto cpu_prepare;
+//		return;		
 	}
-
 
 
 	switch (power_state) {
@@ -702,7 +702,7 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 
 		save_secure_all();
 
-		save_gic_wakeupgen_secure();		
+		save_gic_wakeupgen_secure();		// ES2.2
 
 		if (inst_clk_enab == 1)
 			clk_disable(l3_main_3_ick);
@@ -773,9 +773,20 @@ cpu_prepare:
 		pwrdm_set_next_pwrst(cpu0_pwrdm, power_state);
 	scu_pwrst_prepare(cpu, power_state);
 
+	// kibum.lee
 	if (hard_smp_processor_id() == 0)
 	{
 		mpu_m3_clkctrl= omap_readl(0x4A008920);
+//		while(mpu_m3_clkctrl == 0x60000)
+//		{
+//			udelay(100);
+//			mpu_m3_clkctrl_count++;
+//			if(mpu_m3_clkctrl_count>=100) 
+//			{
+//				//mpu_m3_clkctrl_count = 0;
+//				break;
+//			}
+//		}
 	}
 	/*
 	 * Call low level routine to enter to
@@ -817,6 +828,9 @@ cpu_prepare:
 		/* No need to restore */
 		break;
 	case PWRDM_POWER_RET:
+		/* FIXME:
+		 * if (pwrdm_read_prev_logic_pwrst(mpuss_pd) == PWRDM_POWER_OFF)
+		 */
 		if (omap_readl(0x4a306324) == PWRDM_POWER_OFF)
 			break;
 	case PWRDM_POWER_OFF:

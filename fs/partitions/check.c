@@ -517,7 +517,7 @@ int register_disk(struct gendisk *disk)
 #else
 void register_disk(struct gendisk *disk)
 
-#endif								  
+#endif								
 
 {
 	struct device *ddev = disk_to_dev(disk);
@@ -575,7 +575,7 @@ exit:
 		kobject_uevent(&part_to_dev(part)->kobj, KOBJ_ADD);
 	disk_part_iter_exit(&piter);
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH	  
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
 	if(err == -ENOMEM)
 		return 0xbcbc;
 	else 
@@ -628,7 +628,7 @@ rescan:
 	check_disk_size_change(disk, bdev);
 	bdev->bd_invalidated = 0;
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	 
 				  state = -ENOMEM;
 
 		if (!get_capacity(disk))
@@ -642,7 +642,7 @@ rescan:
 #else	  
 	  if (!get_capacity(disk) || !(state = check_partition(disk, bdev)))
 		  return 0;
-#endif								  
+#endif								
 
 	
 	if (IS_ERR(state)) {

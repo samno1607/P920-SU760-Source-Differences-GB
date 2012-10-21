@@ -230,8 +230,13 @@ struct dsi_reg { u16 idx; };
 #define DSI_PIXEL_STREAM_3BYTE_18	0x2e
 #define DSI_PACKED_PIXEL_STREAM_24	0x3e
 
+#if defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
+#define DSI_VC_CMD	0
+#define DSI_VC_VIDEO	0
+#else
 #define DSI_VC_CMD	0
 #define DSI_VC_VIDEO	1
+#endif
 
 enum fifo_size {
 	DSI_FIFO_SIZE_0		= 0,
@@ -1853,6 +1858,8 @@ static void dsi_complexio_timings(enum omap_dsi_index ix)
 	tclk_prepare = ns2ddr(ix, 65);
 
 	/* min tclk-prepare + tclk-zero = 300ns */
+	//LGE_CHANGE
+	//tclk_zero = ns2ddr(ix, 260);
 	tclk_zero = ns2ddr(ix, 265);
 
 	DSSDBG("ths_prepare %u (%uns), ths_prepare_ths_zero %u (%uns)\n",
@@ -1988,6 +1995,22 @@ static int _dsi_reset(enum omap_dsi_index ix)
 	REG_FLD_MOD(ix, DSI_SYSCONFIG, 1, 1, 1);
 	return _dsi_wait_reset(ix);
 }
+
+#if 0
+static void dsi_reset_tx_fifo(enum omap_dsi_index ix, int channel)
+{
+	u32 mask;
+	u32 l;
+
+	/* set fifosize of the channel to 0, then return the old size */
+	l = dsi_read_reg(ix, DSI_TX_FIFO_VC_SIZE);
+
+	mask = FLD_MASK((8 * channel) + 7, (8 * channel) + 4);
+	dsi_write_reg(ix, DSI_TX_FIFO_VC_SIZE, l & ~mask);
+
+	dsi_write_reg(ix, DSI_TX_FIFO_VC_SIZE, l);
+}
+#endif
 
 static void dsi_config_tx_fifo(enum omap_dsi_index ix,
 	enum fifo_size size1, enum fifo_size size2,
@@ -2160,10 +2183,20 @@ static void dsi_vc_config_l4(enum omap_dsi_index lcd_ix, int channel)
 
 	dsi_vc_enable(lcd_ix, channel, 0);
 
+        #if defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
+	/* VC_BUSY */
+	if (wait_for_bit_change(lcd_ix, DSI_VC_CTRL(channel), 15, 0) != 0) {
+		DSSERR("vc(%d) busy when trying to config for L4\n", channel);
+		return -EIO;
+	}
+	dsi_vc_initial_config(lcd_ix, channel);
+        #else
 	if (REG_GET(lcd_ix, DSI_VC_CTRL(channel), 15, 15)) /* VC_BUSY */
 		DSSERR("vc(%d) busy when trying to config for L4\n", channel);
 
 	REG_FLD_MOD(lcd_ix, DSI_VC_CTRL(channel), 0, 1, 1); /* SOURCE, 0 = L4 */
+        #endif
+
 
 	dsi_vc_enable(lcd_ix, channel, 1);
 
@@ -2186,12 +2219,21 @@ static void dsi_vc_config_vp(enum omap_dsi_index lcd_ix, int channel)
 
 	dsi_vc_enable(lcd_ix, channel, 0);
 
+        #if defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
+	/* VC_BUSY */
+	if (wait_for_bit_change(lcd_ix, DSI_VC_CTRL(channel), 15, 0) != 0) {
+		DSSERR("vc(%d) busy when trying to config for VP\n", channel);
+		return -EIO;
+	}
+	dsi_vc_initial_config_vp(lcd_ix, channel, OMAP_DSI_MODE_VIDEO);
+        #else
 	if (REG_GET(lcd_ix, DSI_VC_CTRL(channel), 15, 15)) /* VC_BUSY */
 			DSSERR("vc(%d) busy when trying to config for VP\n",
 			channel);
 
 	REG_FLD_MOD(lcd_ix, DSI_VC_CTRL(channel), 1,
 			1, 1); /* SOURCE, 1 = video port */
+        #endif
 
 	dsi_vc_enable(lcd_ix, channel, 1);
 
@@ -2219,6 +2261,7 @@ static void dsi_vc_enable_hs(enum omap_dsi_index lcd_ix, int channel, bool enabl
 static void dsi_vc_flush_long_data(enum omap_dsi_index ix,
 		int channel)
 {
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	while (REG_GET(ix, DSI_VC_CTRL(channel), 20, 20)) {
 		u32 val;
 		val = dsi_read_reg(ix, DSI_VC_SHORT_PACKET_HEADER(channel));
@@ -2228,6 +2271,7 @@ static void dsi_vc_flush_long_data(enum omap_dsi_index ix,
 				(val >> 16) & 0xff,
 				(val >> 24) & 0xff);
 	}
+        #endif
 }
 
 static void dsi_show_rx_ack_with_err(u16 err)
@@ -2270,6 +2314,7 @@ static void dsi_show_rx_ack_with_err(u16 err)
 static u16 dsi_vc_flush_receive_data(enum omap_dsi_index ix,
 	int channel)
 {
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	/* RX_FIFO_NOT_EMPTY */
 	while (REG_GET(ix, DSI_VC_CTRL(channel), 20, 20)) {
 		u32 val;
@@ -2295,6 +2340,7 @@ static u16 dsi_vc_flush_receive_data(enum omap_dsi_index ix,
 			DSSERR("\tunknown datatype 0x%02x\n", dt);
 		}
 	}
+        #endif
 	return 0;
 }
 
@@ -2306,12 +2352,13 @@ static int dsi_vc_send_bta(enum omap_dsi_index ix, int channel)
 		DSSDBG("dsi_vc_send_bta %d\n", channel);
 
 	WARN_ON(!dsi_bus_is_locked(ix));
-
+        #if ! defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
 	if (REG_GET(ix, DSI_VC_CTRL(channel), 20, 20)) {
 		/* RX_FIFO_NOT_EMPTY */
 		DSSERR("rx fifo not empty when sending BTA, dumping data:\n");
 		dsi_vc_flush_receive_data(ix, channel);
 	}
+        #endif
 
 	REG_FLD_MOD(ix, DSI_VC_CTRL(channel), 1, 6, 6); /* BTA_EN */
 
@@ -2410,6 +2457,10 @@ static int dsi_vc_send_long(enum omap_dsi_index ix, int channel,
 
 	dsi_vc_write_long_header(ix, channel, data_type, len, ecc);
 
+        #if defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
+	udelay(1);
+        #endif
+
 	p = data;
 	for (i = 0; i < len >> 2; i++) {
 		if (p_dsi->debug_write)
@@ -2466,11 +2517,12 @@ static int dsi_vc_send_short(enum omap_dsi_index ix,
 				data_type, data & 0xff, (data >> 8) & 0xff);
 
 	dsi_vc_config_l4(ix, channel);
-
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	if (FLD_GET(dsi_read_reg(ix, DSI_VC_CTRL(channel)), 16, 16)) {
 		DSSERR("ERROR FIFO FULL, aborting transfer\n");
 		return -EINVAL;
 	}
+        #endif
 
 	if (cpu_is_omap44xx())
 		data_id = data_type | p_dsi->vc[channel].dest_per << 6;
@@ -2525,12 +2577,22 @@ int dsi_vc_dcs_write(enum omap_dsi_index ix, int channel,
 	if (r)
 		goto err;
 
+//LGE_CHANGE_S
+#if 0
+	r = dsi_vc_send_bta_sync(ix, channel);
+	if (r)
+		goto err;
+#endif
+//LGE_CHANGE_E
+
+        #if ! defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
 	if (REG_GET(ix, DSI_VC_CTRL(channel), 20, 20)) {	/* RX_FIFO_NOT_EMPTY */
 		DSSERR("rx fifo not empty after write, dumping data:\n");
 		dsi_vc_flush_receive_data(ix, channel);
 		r = -EIO;
 		goto err;
 	}
+        #endif
 
 	return 0;
 err:
@@ -2571,7 +2633,7 @@ int dsi_vc_dcs_read(enum omap_dsi_index ix, int channel,
 	r = dsi_vc_send_short(ix, channel, DSI_DT_DCS_READ, dcs_cmd, 0);
 	if (r)
 		goto err;
-
+        #if ! defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
 	r = dsi_vc_send_bta_sync(ix, channel);
 	if (r)
 		goto err;
@@ -2582,6 +2644,7 @@ int dsi_vc_dcs_read(enum omap_dsi_index ix, int channel,
 		r = -EIO;
 		goto err;
 	}
+        #endif
 
 	val = dsi_read_reg(ix, DSI_VC_SHORT_PACKET_HEADER(channel));
 	if (p_dsi->debug_read)
@@ -2741,6 +2804,119 @@ int dsi_vc_generic_write_short(int channel, u8 cmd, u8 *data, int len)
 }
 EXPORT_SYMBOL(dsi_vc_generic_write_short);
 
+#if defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
+static void dsi_set_lp_rx_timeout(enum omap_dsi_index ix, unsigned ticks,
+			bool x4, bool x16)
+{
+	unsigned long fck;
+	unsigned long total_ticks;
+	u32 r;
+
+	BUG_ON(ticks > 0x1fff);
+
+	/* ticks in DSI_FCK */
+	fck = dsi_fclk_rate(ix);
+
+	r = dsi_read_reg(ix, DSI_TIMING2);
+	r = FLD_MOD(r, cpu_is_omap44xx() ? 0 : 1,
+			15, 15);	/* LP_RX_TO */
+	r = FLD_MOD(r, x16 ? 1 : 0, 14, 14);	/* LP_RX_TO_X16 */
+	r = FLD_MOD(r, x4 ? 1 : 0, 13, 13);	/* LP_RX_TO_X4 */
+	r = FLD_MOD(r, ticks, 12, 0);	/* LP_RX_COUNTER */
+	dsi_write_reg(ix, DSI_TIMING2, r);
+
+	total_ticks = ticks * (x16 ? 16 : 1) * (x4 ? 4 : 1);
+
+	DSSDBG("LP_RX_TO %lu ticks (%#x%s%s) = %lu ns\n",
+			total_ticks,
+			ticks, x4 ? " x4" : "", x16 ? " x16" : "",
+			(total_ticks * 1000) / (fck / 1000 / 1000));
+}
+
+static void dsi_set_ta_timeout(enum omap_dsi_index ix, unsigned ticks,
+			bool x8, bool x16)
+{
+	unsigned long fck;
+	unsigned long total_ticks;
+	u32 r;
+
+	BUG_ON(ticks > 0x1fff);
+
+	/* ticks in DSI_FCK */
+	fck = dsi_fclk_rate(ix);
+
+	r = dsi_read_reg(ix, DSI_TIMING1);
+	r = FLD_MOD(r, cpu_is_omap44xx() ? 0 : 1,
+			31, 31);	/* TA_TO */
+	r = FLD_MOD(r, x16 ? 1 : 0, 30, 30);	/* TA_TO_X16 */
+	r = FLD_MOD(r, x8 ? 1 : 0, 29, 29);	/* TA_TO_X8 */
+	r = FLD_MOD(r, ticks, 28, 16);	/* TA_TO_COUNTER */
+	dsi_write_reg(ix, DSI_TIMING1, r);
+
+	total_ticks = ticks * (x16 ? 16 : 1) * (x8 ? 8 : 1);
+
+	DSSDBG("TA_TO %lu ticks (%#x%s%s) = %lu ns\n",
+			total_ticks,
+			ticks, x8 ? " x8" : "", x16 ? " x16" : "",
+			(total_ticks * 1000) / (fck / 1000 / 1000));
+}
+
+static void dsi_set_stop_state_counter(enum omap_dsi_index ix, unsigned ticks,
+			bool x4, bool x16)
+{
+	unsigned long fck;
+	unsigned long total_ticks;
+	u32 r;
+
+	BUG_ON(ticks > 0x1fff);
+
+	/* ticks in DSI_FCK */
+	fck = dsi_fclk_rate(ix);
+
+	r = dsi_read_reg(ix, DSI_TIMING1);
+	r = FLD_MOD(r, cpu_is_omap44xx() ? 0 : 1,
+			15, 15);	/* FORCE_TX_STOP_MODE_IO */
+	r = FLD_MOD(r, x16 ? 1 : 0, 14, 14);	/* STOP_STATE_X16_IO */
+	r = FLD_MOD(r, x4 ? 1 : 0, 13, 13);	/* STOP_STATE_X4_IO */
+	r = FLD_MOD(r, ticks, 12, 0);	/* STOP_STATE_COUNTER_IO */
+	dsi_write_reg(ix, DSI_TIMING1, r);
+
+	total_ticks = ticks * (x16 ? 16 : 1) * (x4 ? 4 : 1);
+
+	DSSDBG("STOP_STATE_COUNTER %lu ticks (%#x%s%s) = %lu ns\n",
+			total_ticks,
+			ticks, x4 ? " x4" : "", x16 ? " x16" : "",
+			(total_ticks * 1000) / (fck / 1000 / 1000));
+}
+
+static void dsi_set_hs_tx_timeout(enum omap_dsi_index ix, unsigned ticks,
+			bool x4, bool x16)
+{
+	unsigned long fck;
+	unsigned long total_ticks;
+	u32 r;
+
+	BUG_ON(ticks > 0x1fff);
+
+	/* ticks in TxByteClkHS */
+	fck = dsi_get_txbyteclkhs(ix);
+
+	r = dsi_read_reg(ix, DSI_TIMING2);
+	r = FLD_MOD(r, cpu_is_omap44xx() ? 0 : 1,
+			31, 31);	/* HS_TX_TO */
+	r = FLD_MOD(r, x16 ? 1 : 0, 30, 30);	/* HS_TX_TO_X16 */
+	r = FLD_MOD(r, x4 ? 1 : 0, 29, 29);	/* HS_TX_TO_X8 (4 really) */
+	r = FLD_MOD(r, ticks, 28, 16);	/* HS_TX_TO_COUNTER */
+	dsi_write_reg(ix, DSI_TIMING2, r);
+
+	total_ticks = ticks * (x16 ? 16 : 1) * (x4 ? 4 : 1);
+
+	DSSDBG("HS_TX_TO %lu ticks (%#x%s%s) = %lu ns\n",
+			total_ticks,
+			ticks, x4 ? " x4" : "", x16 ? " x16" : "",
+			(total_ticks * 1000) / (fck / 1000 / 1000));
+}
+#else
 static void dsi_set_lp_rx_timeout(enum omap_dsi_index lcd_ix, unsigned long ns)
 {
 	u32 r;
@@ -2948,6 +3124,8 @@ static void dsi_set_hs_tx_timeout(enum omap_dsi_index lcd_ix, unsigned long ns)
 		(fck / 1000 / 1000),
 		ticks, x4 ? " x4" : "", x16 ? " x16" : "");
 }
+#endif /*CONFIG_MACH_LGE_CX2*/
+
 static int dsi_proto_config(struct omap_dss_device *dssdev)
 {
 #if 0
@@ -3010,6 +3188,9 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 		ddr_clk_pre = 0xA; 	/*sv3*/
 		ddr_clk_post = 0x9;	/*sv3*/
 	}
+	/*Anish: Hard-code as per xls here. Will look at the calculations in xls and see if it fits with the formula above */
+	//ddr_clk_pre = 0xA; 	/*sv3*/
+	//ddr_clk_post = 0xA;	/*sv3*/
 
 	r = dsi_read_reg(lcd_ix, DSI_CLK_TIMING);
 	r = FLD_MOD(r, ddr_clk_pre, 15, 8);
@@ -3046,11 +3227,25 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 	struct dsi_struct *p_dsi;
 	enum omap_dsi_index ix;
 
+//LGE_CHANGE_S
 	enum omap_dsi_mode dsi_mode = dssdev->phy.dsi.mode;
+//LGE_CHANGE_E
 
 	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
 	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
 
+//LGE_CHANGE_S
+#if defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
+	dsi_config_tx_fifo(ix, DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32);
+
+	dsi_config_rx_fifo(ix, DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32,
+			DSI_FIFO_SIZE_32);
+#else
 	{
 		enum fifo_size size1 = (OMAP_DSI_MODE_VIDEO == dsi_mode) ? ( (DSI_VC_VIDEO == 0) ? DSI_FIFO_SIZE_0 : DSI_FIFO_SIZE_64) : DSI_FIFO_SIZE_64;
 		enum fifo_size size2 = (OMAP_DSI_MODE_VIDEO == dsi_mode) ? ( (DSI_VC_VIDEO == 1) ? DSI_FIFO_SIZE_0 : DSI_FIFO_SIZE_64) : DSI_FIFO_SIZE_64;
@@ -3063,12 +3258,21 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 			DSI_FIFO_SIZE_0,
 			DSI_FIFO_SIZE_0);
 	}
+#endif
+//LGE_CHANGE_E
 
 	/* XXX what values for the timeouts? */
+#if defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
+	dsi_set_stop_state_counter(ix, 0x1000, false, false);
+	dsi_set_ta_timeout(ix, 0x1fff, true, true);
+	dsi_set_lp_rx_timeout(ix, 0x1fff, true, true);
+	dsi_set_hs_tx_timeout(ix, 0x1fff, true, true);
+#else
 	dsi_set_stop_state_counter(ix, 1000);
 	dsi_set_ta_timeout(ix, 6400000);
 	dsi_set_lp_rx_timeout(ix, 48000);
 	dsi_set_hs_tx_timeout(ix, 1000000);
+#endif
 
 	switch (dssdev->ctrl.pixel_size) {
 	case 16:
@@ -3093,6 +3297,16 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 	r = FLD_MOD(r, 1, 4, 4);	/* VP_CLK_RATIO, always 1, see errata*/
 	r = FLD_MOD(r, buswidth, 7, 6); /* VP_DATA_BUS_WIDTH */
 	r = FLD_MOD(r, 0, 8, 8);	/* VP_CLK_POL */
+//LGE_CHANGE_S
+#if 0	
+	r = FLD_MOD(r, (cpu_is_omap44xx()) ? 1 : 0,
+			9, 9);	/*VP_DE_POL */
+	r = FLD_MOD(r, (cpu_is_omap44xx()) ? 1 : 0,
+			11, 11);			/*VP_VSYNC_POL */
+	r = FLD_MOD(r, 2, 13, 12);	/* LINE_BUFFER, 2 lines */
+	r = FLD_MOD(r, 1, 14, 14);	/* TRIGGER_RESET_MODE */
+	r = FLD_MOD(r, 1, 19, 19);	/* EOT_ENABLE */
+#else
 	r = FLD_MOD(r, 1, 14, 14);      /* TRIGGER_RESET_MODE */
 
 	if(OMAP_DSI_MODE_VIDEO == dsi_mode)
@@ -3118,6 +3332,8 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 		r = FLD_MOD(r, 2, 13, 12);      /* LINE_BUFFER, 2 lines */
 		r = FLD_MOD(r, (cpu_is_omap44xx()) ? 0 : 1, 19, 19);	/* EOT_ENABLE */
 	}
+#endif
+//LGE_CHANGE_E
 
 	if (cpu_is_omap34xx()) {
 		r = FLD_MOD(r, 1, 24, 24);	/* DCS_CMD_ENABLE */
@@ -3125,13 +3341,24 @@ static int dsi_proto_config(struct omap_dss_device *dssdev)
 	}
 	dsi_write_reg(ix, DSI_CTRL, r);
 
+//LGE_CHANGE_S
+	//dsi_vc_initial_config(ix, 0);
 	dsi_vc_initial_config(ix, DSI_VC_CMD);
+//LGE_CHANGE_E
 
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
+	//LGE_CHANGE_S
 	if (cpu_is_omap44xx()) {
+		//dsi_vc_initial_config_vp(ix, 1);
 		dsi_vc_initial_config_vp(ix, DSI_VC_VIDEO, dsi_mode);
 	} else {
 		dsi_vc_initial_config(ix, 1);
 	}
+        #endif
+#if 0
+	dsi_vc_initial_config(ix, 2);
+	dsi_vc_initial_config(ix, 3);
+#endif
 	/* In Present OMAP4 configuration, 2 VC's send data
 	* to the same peripheral */
 	if (cpu_is_omap44xx()) {
@@ -3177,8 +3404,10 @@ static void dsi_proto_timings(struct omap_dss_device *dssdev)
 
 	/* min 8*UI */
 	tclk_pre = 20;
+//LGE_CHANGE_S	
 	if(cpu_is_omap44xx())
 		tclk_pre = 8;
+//LGE_CHANGE_E	
 	/* min 60ns + 52*UI */
 	tclk_post = ns2ddr(ix, 60) + 26;
 
@@ -3189,10 +3418,12 @@ static void dsi_proto_timings(struct omap_dss_device *dssdev)
 	else
 		ths_eot = 4;
 
+//LGE_CHANGE_S	
 	if(OMAP_DSI_MODE_VIDEO == p_dsi->dsi_mode)
 		ths_eot = 0;
 
 	printk("tclk_post=%d, tclk_trail=%d\n", tclk_post, tclk_trail);
+//LGE_CHANGE_E	
 
 	ddr_clk_pre = DIV_ROUND_UP(tclk_pre + tlpx + tclk_zero + tclk_prepare,
 			4);
@@ -3315,6 +3546,7 @@ static int dsi_update_screen_l4(struct omap_dss_device *dssdev,
 		DSI_DECL_VARS;
 		first = 0;
 
+#if 1
 		/* using fifo not empty */
 		/* TX_FIFO_NOT_EMPTY */
 		while (FLD_GET(dsi_read_reg(ix, DSI_VC_CTRL(0)), 5, 5)) {
@@ -3327,7 +3559,7 @@ static int dsi_update_screen_l4(struct omap_dss_device *dssdev,
 				return -EIO;
 			}
 		}
-
+#endif
 		pixels = min(max_pixels_per_packet, pixels_left);
 
 		pixels_left -= pixels;
@@ -3496,7 +3728,7 @@ static void dsi_handle_framedone(enum omap_dsi_index ix, int error)
 		/* enable LP_RX_TO again after the TE */
 		REG_FLD_MOD(ix, DSI_TIMING2, cpu_is_omap44xx() ? 0 : 1, 15, 15); /* LP_RX_TO */
 	}
-
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	/* RX_FIFO_NOT_EMPTY */
 	if (REG_GET(ix, DSI_VC_CTRL(channel), 20, 20)) {
 		DSSERR("Received error during frame transfer:\n");
@@ -3504,7 +3736,7 @@ static void dsi_handle_framedone(enum omap_dsi_index ix, int error)
 		if (!error)
 			error = -EIO;
 	}
-
+        #endif
 	p_dsi->framedone_callback(error, p_dsi->framedone_data);
 
 	if (!error)
@@ -3774,8 +4006,13 @@ static int dsi_display_init_dispc(struct omap_dss_device *dssdev)
 	dispc_set_lcd_display_type(dssdev->channel, 
 					OMAP_DSS_LCD_DISPLAY_TFT);
 
+#if 0
+	dispc_set_parallel_interface_mode(dssdev->channel,
+					OMAP_DSS_PARALLELMODE_DSI);
+#else	/* JamesLee */
 	dispc_set_parallel_interface_mode(dssdev->channel,
 		(OMAP_DSI_MODE_CMD == dsi_mode)? OMAP_DSS_PARALLELMODE_DSI : OMAP_DSS_PARALLELMODE_BYPASS);
+#endif
 		dispc_enable_fifohandcheck(dssdev->channel, (OMAP_DSI_MODE_CMD == dsi_mode)? 1 : 0);
 
 	dispc_set_tft_data_lines(dssdev->channel, dssdev->ctrl.pixel_size);
@@ -3784,9 +4021,12 @@ static int dsi_display_init_dispc(struct omap_dss_device *dssdev)
 		dispc_set_lcd_timings(dssdev->channel, &timings);
 	else {		
 		dispc_set_lcd_timings(dssdev->channel, &dssdev->panel.timings);	
-
+		/* JamesLee :: Inserted */
+//LGE_CHANGE_S [taekeun1.kim@lge.com] 2010-12-14, P920 : code refine.
+		//printk("DOLCOM : lcd size set %x %x\n", dssdev->panel.timings.x_res, dssdev->panel.timings.y_res+dssdev->panel.timings.vfp);
 		dispc_set_lcd_size(dssdev->channel, dssdev->panel.timings.x_res, dssdev->panel.timings.y_res+dssdev->phy.dsi.timings.vfp);
-
+		//dispc_set_lcd_size(dssdev->channel, dssdev->panel.timings.x_res, dssdev->panel.timings.y_res+dssdev->phy.dsi.timings.vfp);
+//LGE_CHANGE_E [taekeun1.kim@lge.com] 2010-12-14, P920 : code refine.
 	}
 	dispc_set_pol_freq(dssdev->channel, dssdev->panel.config,
 		dssdev->panel.acbi, dssdev->panel.acb);
@@ -3797,12 +4037,14 @@ static int dsi_display_init_dispc(struct omap_dss_device *dssdev)
 
 static void dsi_display_uninit_dispc(struct omap_dss_device *dssdev)
 {
+//LGE_CHANGE_S
 	if (OMAP_DSI_MODE_CMD == dssdev->phy.dsi.mode) {
 		omap_dispc_unregister_isr((dssdev->channel == OMAP_DSS_CHANNEL_LCD) ?
 			dsi_framedone_irq_callback : dsi2_framedone_irq_callback,
 			NULL, (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ?
 			DISPC_IRQ_FRAMEDONE : DISPC_IRQ_FRAMEDONE2);
 	}	
+//LGE_CHANGE_E
 }
 
 static int dsi_configure_dsi_clocks(struct omap_dss_device *dssdev)
@@ -3835,6 +4077,7 @@ static int dsi_configure_dsi_clocks(struct omap_dss_device *dssdev)
 	return 0;
 }
 
+//LGE_CHANGE_S
 void dsi_enable_video_mode(struct omap_dss_device *dssdev)
 {
 	u8 pixel_type;
@@ -3859,15 +4102,22 @@ void dsi_enable_video_mode(struct omap_dss_device *dssdev)
 		n_bytes = dssdev->panel.timings.x_res * 3;
 		break;
 	}
+
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	dsi_vc_enable(lcd_ix, DSI_VC_CMD, 0);
 	dsi_vc_write_long_header(lcd_ix, DSI_VC_VIDEO, pixel_type, n_bytes, 0);
 	dsi_vc_enable(lcd_ix, DSI_VC_VIDEO, 1);
+        #else
+	dsi_vc_config_vp(lcd_ix, DSI_VC_VIDEO);
+	dsi_vc_write_long_header(lcd_ix, DSI_VC_VIDEO /*DSI_VC_VIDEO*/, pixel_type, n_bytes, 0);
+        #endif
+
 	dsi_if_enable(lcd_ix, 1);
 	dispc_enable_lcd_out(dssdev->channel, 1);
 	dispc_go(dssdev->channel);
 }
 
-
+// LGE_CHANGE Darren.Kang@lge.com 2011.01.25 For send cmd during LCD receiving video [ST]
 int dsi_enable_dcs_cmd(struct omap_dss_device *dssdev,enum omap_dsi_index ix)
 {
 	int r = 0;
@@ -3906,8 +4156,98 @@ int dsi_disable_dcs_cmd(struct omap_dss_device *dssdev,enum omap_dsi_index ix)
 	dsi_if_enable(ix, 1);
 	return 0;
 }
+// LGE_CHANGE Darren.Kang@lge.com 2011.01.25 For send cmd during LCD receiving video [END]
 
+#if defined (CONFIG_MACH_LGE_CX2) /*kyungyoon.kim@lge.com*/
+void dsi_enable_cmd_video_mode(struct omap_dss_device *dssdev)
+{
 
+	u8 pixel_type;
+	u16 n_bytes;
+	enum omap_dsi_index ix;
+
+	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	dsi_if_enable(ix, 0);
+
+	switch (dssdev->ctrl.pixel_size) {
+		case 16:
+			pixel_type = DSI_PACKED_PIXEL_STREAM_16;
+			n_bytes = dssdev->panel.timings.x_res * 2;
+			break;
+		case 18:
+			pixel_type = DSI_PACKED_PIXEL_STREAM_18;
+			n_bytes = (dssdev->panel.timings.x_res * 18) / 8;
+			break;
+		case 24:
+		default:
+			pixel_type = DSI_PACKED_PIXEL_STREAM_24;
+			n_bytes = dssdev->panel.timings.x_res * 3;
+			break;
+	}
+	dsi_vc_config_vp(ix, DSI_VC_VIDEO);
+	dsi_vc_write_long_header(ix, DSI_VC_VIDEO /*DSI_VC_VIDEO*/, pixel_type, n_bytes, 0);
+	dsi_if_enable(ix, 1);
+}
+#endif
+
+#if 0
+static void dsi_set_video_mode_timings(struct omap_dss_device *dssdev)
+{
+	u32 r;
+	u16 window_sync;
+	u16 vm_tl;
+	u16 n_lanes;
+	enum omap_dsi_index lcd_ix;
+	lcd_ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+
+	window_sync = 4;
+	r = FLD_VAL(dssdev->panel.timings.hbp, 11, 0) |
+		FLD_VAL(dssdev->panel.timings.hfp, 23, 12) |
+		FLD_VAL(dssdev->panel.timings.hsa, 31, 24);
+	dsi_write_reg(lcd_ix, DSI_VM_TIMING1, r);
+
+	r = FLD_VAL(dssdev->panel.timings.vbp, 7, 0) |
+		FLD_VAL(dssdev->panel.timings.vfp, 15, 8) |
+		FLD_VAL(dssdev->panel.timings.vsa, 23, 16) |
+		FLD_VAL(window_sync, 27, 24);
+	dsi_write_reg(lcd_ix, DSI_VM_TIMING2, r);
+
+	n_lanes = dssdev->phy.dsi.num_data_lanes;
+
+	vm_tl = ((dssdev->ctrl.pixel_size) *
+		(dssdev->panel.timings.x_res +
+		dssdev->panel.timings.hsw +
+		dssdev->panel.timings.hbp +
+		dssdev->panel.timings.hfp) )/ (8 * n_lanes);
+
+	r = FLD_VAL(dssdev->panel.timings.y_res, 15, 0) |
+		FLD_VAL(vm_tl, 31, 16);
+	dsi_write_reg(lcd_ix, DSI_VM_TIMING3, r);
+
+#ifdef DEBUG_DSI_VIDEO_MODE
+	printk("[ALBERTO] DSI timings [hbp:%d hfp:%d hsa:%d] [vbp:%d vfp:%d vsa:%d]\n",
+		dssdev->panel.timings.hbp,
+		dssdev->panel.timings.hfp,
+		dssdev->panel.timings.hsa,
+		dssdev->panel.timings.vbp,
+		dssdev->panel.timings.vfp,
+		dssdev->panel.timings.vsa
+		);
+
+	printk("[ALBERTO] DISPC:hsw=%d hbp=%d x_res=%d hfp=%d \n",
+		dssdev->panel.timings.hsw,
+		dssdev->panel.timings.hbp,
+		dssdev->panel.timings.x_res,
+		dssdev->panel.timings.hfp);
+
+	printk("[ALBERTO] pix_size=%d data_lanes=%d pixels_per_line=%d vm_tl=0x%x\n",
+		dssdev->ctrl.pixel_size,
+		n_lanes,
+		dssdev->panel.timings.x_res,
+		vm_tl);
+#endif
+}
+#else
 void dsi_set_video_mode_timings(struct omap_dss_device *dssdev)
 {
 	u32 r;
@@ -3966,6 +4306,8 @@ void dsi_set_video_mode_timings(struct omap_dss_device *dssdev)
 
 }
 
+#endif
+//LGE_CHANGE_E
 static int dsi_configure_dispc_clocks(struct omap_dss_device *dssdev)
 {
 	struct dispc_clock_info dispc_cinfo;
@@ -4015,13 +4357,27 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 		goto err1;
 
 	if (cpu_is_omap44xx()) {
+#if 0
+		dss_select_dispc_clk_source(ix, (ix == DSI1) ?
+			DSS_SRC_PLL1_CLK1 : DSS_SRC_PLL2_CLK1);
+#else
 	dss_select_dispc_clk_source(ix, (ix == DSI1) ?
 		DSS_SRC_PLL1_CLK1 : DSS_SRC_DSS1_ALWON_FCLK);
+#endif
 
+//#ifdef DOLCOM_TEST
 		dss_select_dsi_clk_source(ix, (ix == DSI1) ?
 			DSS_SRC_PLL1_CLK2 : DSS_SRC_PLL1_CLK2);
 		dss_select_lcd_clk_source(ix, (ix == DSI1) ?
 			DSS_SRC_PLL1_CLK1 : DSS_SRC_PLL2_CLK1);
+/*#else
+		dss_select_dsi_clk_source(ix, (ix == DSI1) ?
+			DSS_SRC_PLL1_CLK2 : DSS_SRC_DSI2_PLL_FCLK);
+		dss_select_lcd_clk_source(ix, (ix == DSI1) ?
+			DSS_SRC_PLL1_CLK1 : DSS_SRC_DSI2_PLL_FCLK);
+
+#endif
+*/
 	} else {
 		dss_select_dispc_clk_source(ix,
 				DSS_SRC_DSI1_PLL_FCLK);
@@ -4044,9 +4400,11 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 	dsi_proto_timings(dssdev);
 	dsi_set_lp_clk_divisor(dssdev);
 
+//LGE_CHANGE_S
 	if (OMAP_DSI_MODE_VIDEO == p_dsi->dsi_mode) {
 		dsi_set_video_mode_timings(dssdev);		
 	}
+//LGE_CHANGE_E
 	
 	if (1)
 		_dsi_print_reset_status(ix);
@@ -4056,12 +4414,22 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 		goto err3;
 
 	/* enable interface */
+//LGE_CHANGE_S
+#if 0
+	dsi_vc_enable(ix, 0, 1);
+	dsi_vc_enable(ix, 1, 1);
+#else
+	/* Jameslee ??? */
 	dsi_vc_enable(ix, DSI_VC_CMD, 1);
 	if(OMAP_DSI_MODE_CMD == dssdev->phy.dsi.mode)
 		dsi_vc_enable(ix, DSI_VC_VIDEO, 1);
+#endif
+//LGE_CHANGE_E
 
+        #if ! defined (CONFIG_MACH_LGE_CX2)/*kyungyoon.kim@lge.com*/
 	dsi_vc_enable(ix, 2, 1);
 	dsi_vc_enable(ix, 3, 1);
+        #endif
 	dsi_if_enable(ix, 1);
 	dsi_force_tx_stop_mode_io(ix);
 
@@ -4072,9 +4440,11 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 	dsi_write_reg(ix, DSI_DSIPHY_CFG8, 0xC2E);
 #endif
 
+//LGE_CHANGE_S
 	if (OMAP_DSI_MODE_VIDEO == p_dsi->dsi_mode) {
-		;
+		//dsi_enable_video_mode(dssdev);
 	}
+//LGE_CHANGE_E
 
 	return 0;
 err3:
@@ -4164,11 +4534,11 @@ int omapdss_dsi_display_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err1;
 
-
+//jonathan.kim@lge.com S Removed for video playback
 #ifdef USE_DSI_CORE_INIT
 	dsi_core_init(ix);
 #endif
-
+//jonathan.kim@lge.com E Removed for video playback
 
 	r = dsi_display_init_dispc(dssdev);
 	if (r)
@@ -4224,17 +4594,17 @@ void omapdss_dsi_display_disable(struct omap_dss_device *dssdev)
 
 	mutex_lock(&p_dsi->lock);
 
-
+//LGE_CHANGE_S [taekeun1.kim@lge.com] 2010-12-10, P920 : retention mode and code refine.
 	dispc_enable_lcd_out(dssdev->channel, 0);
 	//dispc_stop(dssdev->channel); printk("DOLCOM : dispc stop called\n");
-
+//LGE_CHANGE_E [taekeun1.kim@lge.com] 2010-12-10, P920 : retention mode and code refine.
 	dsi_display_uninit_dispc(dssdev);
 	dsi_display_uninit_dsi(dssdev);
 
-
+//LGE_CHANGE_S [taekeun1.kim@lge.com] 2010-12-10, P920 : retention mode and code refine. temp TI patch
 	if (cpu_is_omap44xx())
 		  _dsi_reset(1);
-
+//LGE_CHANGE_E [taekeun1.kim@lge.com] 2010-12-10, P920 : retention mode and code refine. temp TI patch
 
 	enable_clocks(0);
 	dsi_enable_pll_clock(ix, 0);
@@ -4300,6 +4670,7 @@ void dsi_get_overlay_fifo_thresholds(enum omap_plane plane,
 			}
 }
 
+// Modified by prajuna 20110223 for color tuning {
 #ifdef LGE_FW_TDMB
 static int dsi_set_ccs(struct omap_dss_device *dssdev, struct omap_ccs_matrix *ccs_info)
 {
@@ -4313,7 +4684,8 @@ static int dsi_set_ccs(struct omap_dss_device *dssdev, struct omap_ccs_matrix *c
 
 	return 0;
 }
-#endif
+#endif // LGE_FW_TDMB
+// Modified by prajuna 20110223 for color tuning {
 
 int dsi_init_display(struct omap_dss_device *dssdev)
 {
@@ -4323,16 +4695,25 @@ int dsi_init_display(struct omap_dss_device *dssdev)
 
 	p_dsi = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? &dsi1 : &dsi2;
 
+// Modified by prajuna 20110223 for color tuning {
 #ifdef LGE_FW_TDMB
 	dssdev->set_ccs = dsi_set_ccs;
-#endif
+#endif // LGE_FW_TDMB
+// Modified by prajuna 20110223 for color tuning }
 
 	/* XXX these should be figured out dynamically */
+//LGE_CHANGE_S
+#if 0
+	dssdev->caps = OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE |
+		OMAP_DSS_DISPLAY_CAP_TEAR_ELIM;
+#else
 	if (OMAP_DSI_MODE_VIDEO == p_dsi->dsi_mode)
 		dssdev->caps = 0;
 	else
 		dssdev->caps = OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE |
 				OMAP_DSS_DISPLAY_CAP_TEAR_ELIM;
+#endif
+//LGE_CHANGE_S
 	p_dsi->vc[0].dssdev = dssdev;
 	p_dsi->vc[1].dssdev = dssdev;
 
@@ -4463,6 +4844,7 @@ int dsi_init(struct platform_device *pdev)
 	INIT_DELAYED_WORK_DEFERRABLE(&dsi1.framedone_timeout_work,
 			dsi_framedone_timeout_work_callback);
 	}
+//LGE_CHANGE_E	
 	if (cpu_is_omap44xx()) {
 		r = request_irq(OMAP44XX_IRQ_DSS_DSI1, dsi_irq_handler,
 				0, "OMAP DSI", (void *)0);
@@ -4537,6 +4919,7 @@ int dsi2_init(struct platform_device *pdev)
 	mutex_init(&dsi2.lock);
 	sema_init(&dsi2.bus_lock, 1);
 
+//LGE_CHANGE_S
 	while(--num_devices >= 0)
 	{
 		if( (OMAP_DISPLAY_TYPE_DSI == pdata->devices[num_devices]->type) && 
@@ -4557,6 +4940,7 @@ int dsi2_init(struct platform_device *pdev)
 		INIT_DELAYED_WORK_DEFERRABLE(&dsi2.framedone_timeout_work,
 				dsi2_framedone_timeout_work_callback);
 	}
+//LGE_CHANGE_E	
 
         r = request_irq(OMAP44XX_IRQ_DSS_DSI2, dsi2_irq_handler,
 			0, "OMAP DSI2", (void *)0);

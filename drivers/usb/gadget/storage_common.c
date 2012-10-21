@@ -291,6 +291,8 @@ struct fsg_lun {
 	u32		unit_attention_data;
 
 	struct device	dev;
+	/* Vendor (8 chars), product (16 chars), release (4
+	 * hexadecimal digits) and NUL byte */
 	char inquiry_string[8 + 16 + 4 + 1];
 };
 

@@ -32,6 +32,11 @@
 
 #include <linux/usb/android_composite.h>
 
+//#ifdef DBG
+//#undef DBG
+//#define DBG(a, x...) printk(x)
+//#endif
+
 #define BULK_BUFFER_SIZE           4096
 
 /* number of tx requests to allocate */

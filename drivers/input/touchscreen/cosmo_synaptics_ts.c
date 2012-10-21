@@ -36,7 +36,11 @@ PARTICULAR PURPOSE.  See the * GNU General Public License for more details. * */
 #define SYNAPTICS_INT_ABS0 		1<<2
 #define SYNAPTICS_INT_BUTTON	1<<3
 
+#if 0
+#define SYNAPTICS_CONTROL_REG		0x4F
+#else	/* JamesLee :: for 4.3inch touch */
 #define SYNAPTICS_CONTROL_REG		0x21
+#endif
 #define SYNAPTICS_CONTROL_SLEEP 	1<<0
 #define SYNAPTICS_CONTROL_NOSLEEP	1<<2
 
@@ -63,11 +67,9 @@ struct synaptics_ts_data {
 	int reported_finger_count;
 	int8_t sensitivity_adjust;
 	int (*power)(int on);
-
 	unsigned int count;
 	int x_lastpt;
 	int y_lastpt;
-
 	struct early_suspend early_suspend;
 	uint32_t	button_state;
 
@@ -120,11 +122,20 @@ and other items needed by this module.
 #define BLUE_LED_GPIO (OMAP_MAX_GPIO_LINES + TWL4030_GPIO_MAX)
 
 /*                         CONSTANTS DATA DEFINITIONS                      */
-#define FINGER_MAX 10
+#define FINGER_MAX 10 //최대 5개 손가락 사용  
 
 #define TS_DEBUG
 #define TS_DEBUG_BUFFER_SIZE		1024
 
+/*
+#ifndef TS_USES_IC_GESTURE
+#define FLICK_TIME_THRESHOLD		22		// 8
+#define FLICK_DISTANCE_THRESHOLD	30		// 15
+#endif//TS_USES_IC_GESTURE 
+//#define DEFAULT_POLLING_PERIOD		60
+//#define HOLD_THRESHOLD				17		// 20		// 15
+//#define LONG_THRESHOLD				1000//40   //25		// 10
+*/
 #define TS_SNTS_X_AXIS_MAX_TM1343_002 1441
 #define TS_SNTS_Y_AXIS_MAX_TM1343_002 840
 #define FLICK_RANGE 4
@@ -134,6 +145,7 @@ and other items needed by this module.
 #define SPREADING_TH   20
 #define PINCHING_TH    20 
 
+//1497
 
 //------------------------------------------------------------------------------------------------
 // Register setting value
@@ -182,12 +194,22 @@ and other items needed by this module.
 #define TS_SNTS_2D_CTRL00_REDUCED_REPORTING	0x01	// Relative Ballistic Disable, Relative Postion Filter Disable, Absolute Position Filter Disable, Reduced Reporting Mode
 #define TS_SNTS_2D_CTRL00_FULL_REPORTING	0x00	// Relative Ballistic Disable, Relative Postion Filter Disable, Absolute Position Filter Disable, Continuous Reporting Mode
 
+//#define TS_SNTS_2D_CTRL10_DEFAULT_VALUE		0x54	// Pinch Enable, Flick Enable, Double Tap Enable
+//#define TS_SNTS_2D_CTRL10_RESET_VALUE		0x7F	// All Enable
+
+//#define TS_SNTS_2D_CTRL18_VALUE				0x03	// Minimum Flick Distance (3 * (1 mm))
+//#define TS_SNTS_2D_CTRL19_VALUE				0x04	// Minimum Flick Speed (4 * (1 mm / 100 ms))
 
 #define TS_SNTS_2D_CTRL14_VALUE				0x00	// Sensitivity Adjust
 
+///TODO: Must Check this.
+//#ifdef TS_I2C_FAIL_MANAGEMENT
 #define TS_SNTS_DELAY_BETWEEN_POWER_DOWN_UP 		100	// 100ms	// For T1021
+//#endif
 #define TS_SNTS_DELAY_TO_LOW_ATTN_FOR_CLEARPAD		500	// 500 ms	// For T1021
 
+//#define TS_SNTS_DEVICE_COMMAND_RESET				1	// Reset
+//#define TS_SNTS_FW_VER_RETRY_CNT					10
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /*                                                                         */
@@ -227,6 +249,16 @@ typedef struct {
 	int Y[FINGER_MAX];
 	unsigned char Z[FINGER_MAX];
 	unsigned char W[FINGER_MAX];
+	//TS_FINGER_STATUS_TYPE finger_status[FINGER_MAX];
+	/* Ku */
+	//TOUCH_EVENT_TYPE event[FINGER_MAX];
+  	// For T1021
+  	/*
+	unsigned char gesture_flag[2];
+	unsigned char pinch_motion_and_X_flick_dist;
+	unsigned char Y_flick_dist;
+	unsigned char flick_time_reg;
+	*/
 } touch_event_debugging_data;
 #endif /* TS_DEBUG */
 
@@ -234,6 +266,86 @@ typedef struct {
 #define START_ADDR      0x13
 #define GESTURE_FLAGS	0x4A
 
+#if 0
+typedef struct
+{
+	unsigned char device_status_reg;            //0x13
+	unsigned char interrupt_status_reg;			//0x14
+	unsigned char finger_state_reg[3];			//0x15~0x17
+	// Finger 0
+	unsigned char X_high_position_finger0_reg;  //0x18
+	unsigned char Y_high_position_finger0_reg;	//0x19
+	unsigned char XY_low_position_finger0_reg;	//0x1A
+	unsigned char XY_width_finger0_reg;			//0x1B
+	unsigned char Z_finger0_reg;				//0x1C
+	// Finger 1
+	unsigned char X_high_position_finger1_reg;  //0x1D
+	unsigned char Y_high_position_finger1_reg;	//0x1E
+	unsigned char XY_low_position_finger1_reg;	//0x1F
+	unsigned char XY_width_finger1_reg;			//0x20
+	unsigned char Z_finger1_reg;				//0x21
+ 	// Finger 2
+	unsigned char X_high_position_finger2_reg;  //0x22
+	unsigned char Y_high_position_finger2_reg;	//0x23
+	unsigned char XY_low_position_finger2_reg;	//0x24
+	unsigned char XY_width_finger2_reg;			//0x25
+	unsigned char Z_finger2_reg;				//0x26
+#if 0
+	// Finger 3
+	unsigned char X_high_position_finger3_reg;  //0x27
+	unsigned char Y_high_position_finger3_reg;	//0x28
+	unsigned char XY_low_position_finger3_reg;	//0x29
+	unsigned char XY_width_finger3_reg;			//0x2A
+	unsigned char Z_finger3_reg;				//0x2B
+ 	// Finger 4
+	unsigned char X_high_position_finger4_reg;  //0x2C
+	unsigned char Y_high_position_finger4_reg;	//0x2D
+	unsigned char XY_low_position_finger4_reg;	//0x2E
+	unsigned char XY_width_finger4_reg;			//0x2F
+	unsigned char Z_finger4_reg;				//0x30
+ 	// Finger 5
+	unsigned char X_high_position_finger5_reg;  //0x31
+	unsigned char Y_high_position_finger5_reg;	//0x32
+	unsigned char XY_low_position_finger5_reg;	//0x33
+	unsigned char XY_width_finger5_reg;			//0x34
+	unsigned char Z_finger5_reg;				//0x35
+ 	// Finger 6
+	unsigned char X_high_position_finger6_reg;  //0x36
+	unsigned char Y_high_position_finger6_reg;	//0x37
+	unsigned char XY_low_position_finger6_reg;	//0x38
+	unsigned char XY_width_finger6_reg;			//0x39
+	unsigned char Z_finger6_reg;				//0x3A
+ 	// Finger 7
+	unsigned char X_high_position_finger7_reg;  //0x3B
+	unsigned char Y_high_position_finger7_reg;	//C
+	unsigned char XY_low_position_finger7_reg;	//D
+	unsigned char XY_width_finger7_reg;			//E
+	unsigned char Z_finger7_reg;				//F
+ 	// Finger 8
+	unsigned char X_high_position_finger8_reg;  //0x40
+	unsigned char Y_high_position_finger8_reg;	//
+	unsigned char XY_low_position_finger8_reg;	//
+	unsigned char XY_width_finger8_reg;			//
+	unsigned char Z_finger8_reg;				//0x44
+ 	// Finger 9
+	unsigned char X_high_position_finger9_reg;  //0x45
+	unsigned char Y_high_position_finger9_reg;	//
+	unsigned char XY_low_position_finger9_reg;	//
+	unsigned char XY_width_finger9_reg;			//
+	unsigned char Z_finger9_reg;				//0x49
+
+	
+	unsigned char gesture_flag0;     	       //0x4A
+	unsigned char gesture_flags_1;			   //0x4B
+	unsigned char pinch_motion_X_flick_distance;	//04C
+	unsigned char rotation_motion_Y_flick_distance;  //0x4D
+	unsigned char finger_separation_flick_time;		//0x4E
+//	unsigned char button_data;						//0x4F
+	unsigned char device_control;			//0x4F
+	//unsigned char firmware_ver_reg;
+#endif
+} ts_sensor_data;
+#else	/* JamesLee :: for 4.3 inch touch */
 typedef struct
 {
 	unsigned char device_status_reg;            //0x13
@@ -266,6 +378,7 @@ typedef struct
 	unsigned char max_y_position_7_0;			// 0x2B
 	unsigned char max_y_position_11_8;			// 0x2C
 } ts_sensor_data;
+#endif
 
 typedef struct
 {
@@ -280,8 +393,10 @@ typedef struct
 
 typedef struct {
 	unsigned char finger_count;
+//  TS_FINGER_STATUS_TYPE finger_status[FINGER_MAX];
 	int X_position[FINGER_MAX];
 	int Y_position[FINGER_MAX];
+//  TOUCH_EVENT_TYPE Event[FINGER_MAX];
 } ts_finger_data;
 
 static ts_sensor_data ts_reg_data={0};
@@ -289,6 +404,7 @@ static ts_gesture_data ts_gesture_reg = {0};
 static ts_finger_data curr_ts_data;
 
 typedef struct {
+	//TS_FINGER_STATUS_TYPE finger_status[FINGER_MAX];
 	unsigned int action[FINGER_MAX];
   	unsigned int finger_data[FINGER_MAX];
 } TOUCH_MULTIFINGER_DATA_TYPE;
@@ -298,9 +414,16 @@ typedef struct {
 /*                            External Data                                */
 /*                                                                         */
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/* Ku */
+// extern rex_crit_sect_type ts_crit_sect;
+// extern rex_timer_type ts_poll_timer;
+//extern clk_cb_type ts_polling_clk_cb;
 
 #ifdef TS_HW_VER_MANAGEMENT
 #ifndef FEATURE_LGE_I2C_USING_GPIO
+// extern unsigned int nTS_INT_OUT;
+// extern unsigned int nTS_INT_IN;
+// extern unsigned int nTS_INT;
 #endif
 #endif /* TS_HW_VER_MANAGEMENT */
 
@@ -335,10 +458,12 @@ typedef void (*hs_touch_event_cb_type) (void * cmd);
 hs_touch_event_cb_type cb_ptr = NULL;
 static int ts_cmer_tscrn = 0;
 static int ts_cmec_tscrn = 0;
+//static BOOL ts_touchable_reporting_to_ds = FALSE;
 static BOOL ts_cind_inputstatus_in_sleep = FALSE;
 #endif // FEATURE_LGE_DSAT_TOUCHSCREEN_EMULATION
 
 
+//ended by jykim
 
 static int ts_pre_state = 0; /* for checking the touch state */
 
@@ -351,6 +476,7 @@ static void synaptics_ts_work_func(struct work_struct *work)
 	int int_mode;
 	int i;
 	int width0, width1, width2, width3;
+	//int_mode = i2c_smbus_read_byte_data(ts->client, 0x14);
 	int_mode ;
 	
 	int i2 = 0;
@@ -359,18 +485,31 @@ static void synaptics_ts_work_func(struct work_struct *work)
     int longpress;
 
 	int x, y;
+//	printk("#####################################################################################ts_work_fn\n");
 	int_mode = i2c_smbus_read_byte_data(ts->client, 0x14);
 
 	if(int_mode & SYNAPTICS_INT_ABS0)
-	{
+	/*while (1)*/ {
 
 		i2c_smbus_read_i2c_block_data(ts->client, START_ADDR, sizeof(ts_reg_data), &ts_reg_data);
 		i2c_smbus_read_i2c_block_data(ts->client, GESTURE_FLAGS, sizeof(ts_gesture_reg), &ts_gesture_reg);
 
+#if 0		/* JamesLee */
+		printk("[JamesLee] X_high=%d, Y_high=%d, XY_low=%d\n", ts_reg_data.X_high_position_finger0_reg, 
+					ts_reg_data.Y_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
+#endif
+#if 0
+		if(TS_SNTS_GET_FINGER_STATE_0(ts_reg_data.finger_state_reg[0]) == 1 ) //&& ((ts_reg_data.XY_width_finger0_reg & 240) >> 4) > 0 && (ts_reg_data.XY_width_finger0_reg & 15)> 0)
+#else	/* JamesLee :: for 4.3inch touch */
 		if(TS_SNTS_GET_FINGER_STATE_0(ts_reg_data.finger_state_reg) == 1 ) //&& ((ts_reg_data.XY_width_finger0_reg & 240) >> 4) > 0 && (ts_reg_data.XY_width_finger0_reg & 15)> 0)
+#endif
 		{
 			touch1_prestate = 1;
+#if 0
+			curr_ts_data.X_position[0] = 986 - (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
+#else	/* JamesLee */
 			curr_ts_data.X_position[0] = (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
+#endif
   			curr_ts_data.Y_position[0] = (int)TS_SNTS_GET_Y_POSITION(ts_reg_data.Y_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
 			synaptics_history.X_position[i2] = curr_ts_data.X_position[0];
 			synaptics_history.Y_position[i2] = curr_ts_data.Y_position[0];
@@ -384,6 +523,9 @@ static void synaptics_ts_work_func(struct work_struct *work)
        		input_report_abs(ts->input_dev, ABS_MT_POSITION_X, curr_ts_data.X_position[0]);
         	input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, curr_ts_data.Y_position[0]);
 
+#if 0		/* JamesLee */
+			printk("Synaptics_X, Synaptics_Y = (%d, %d), z = %d, w = %d, %d\n", curr_ts_data.X_position[0], curr_ts_data.Y_position[0], ((ts_reg_data.XY_width_finger0_reg & 240) >> 4), (ts_reg_data.XY_width_finger0_reg & 15), width0);
+#endif
 		
 			input_mt_sync(ts->input_dev);		
 			
@@ -424,6 +566,48 @@ static void synaptics_ts_work_func(struct work_struct *work)
 			i2 = 0;
 		}
 
+#if 0
+		if(TS_SNTS_GET_FINGER_STATE_2(ts_reg_data.finger_state_reg) == 1 && touch1_prestate ==1 && touch2_prestate == 1)
+		{
+			ts_pre_state = 1;
+			curr_ts_data.X_position[2] = (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger2_reg, ts_reg_data.XY_low_position_finger2_reg);
+  			curr_ts_data.Y_position[2] = (int)TS_SNTS_GET_Y_POSITION(ts_reg_data.Y_high_position_finger2_reg, ts_reg_data.XY_low_position_finger2_reg);
+			
+ 			if ((((ts_reg_data.XY_width_finger2_reg & 240) >> 4) - (ts_reg_data.XY_width_finger2_reg & 15)) > 0)
+				width2 = (ts_reg_data.XY_width_finger2_reg & 240) >> 4;
+			else
+				width2 = ts_reg_data.XY_width_finger2_reg & 15;
+			
+			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, width2);
+        	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, curr_ts_data.X_position[2]);
+			input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, curr_ts_data.Y_position[2]);
+			
+			printk("Third_x= %d Third_y=%d\n", curr_ts_data.X_position[2], curr_ts_data.Y_position[2]);
+		
+			input_mt_sync(ts->input_dev);	
+		}
+#endif
+#if 0
+		if(TS_SNTS_GET_FINGER_STATE_3(ts_reg_data.finger_state_reg[0]) == 1 && touch1_prestate ==1 && touch2_prestate == 1 )
+		{
+			ts_pre_state = 1;
+  			curr_ts_data.X_position[3] = (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger3_reg, ts_reg_data.XY_low_position_finger3_reg);
+  			curr_ts_data.Y_position[3] = (int)TS_SNTS_GET_Y_POSITION(ts_reg_data.Y_high_position_finger3_reg, ts_reg_data.XY_low_position_finger3_reg);
+			
+ 			if ((((ts_reg_data.XY_width_finger3_reg & 240) >> 4) - (ts_reg_data.XY_width_finger3_reg & 15)) > 0)
+				width3 = (ts_reg_data.XY_width_finger3_reg & 240) >> 4;
+			else
+				width3 = ts_reg_data.XY_width_finger3_reg & 15;
+			
+			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, width3);
+        	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, curr_ts_data.X_position[3]);
+			input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, curr_ts_data.Y_position[3]);
+			
+			printk("Fourth_x= %d Fourth_y=%d\n", curr_ts_data.X_position[3], curr_ts_data.Y_position[3]);
+		
+			input_mt_sync(ts->input_dev);	
+		}
+#endif
 			input_mt_sync(ts->input_dev);
 	
 		if (touch1_prestate ==1 && touch2_prestate == 1)
@@ -431,6 +615,9 @@ static void synaptics_ts_work_func(struct work_struct *work)
 		               
 		input_sync(ts->input_dev);
 		
+//		if (ts_pre_state == 0) {
+//			break;
+//		}
 	}/* End of While(1) */
 	
 	if (int_mode & SYNAPTICS_INT_BUTTON) {
@@ -443,9 +630,11 @@ static void synaptics_ts_work_func(struct work_struct *work)
 		
 		last_state = ts->button_state;
 		
+		//for (i = 0; i < sd->button_caps.button_count; i++) {
 		for (i = 0; i < 4; i++) {
 			const u32 mask = (1 << i);
 			if ((state & mask) ^ (last_state & mask)) {
+				//input_report_key(sd->tp[0].idev, pdata->button_map[button_nr], val);
 				input_report_key(ts->input_dev, 
 						button_map[i], 
 						state & mask ? 1 : 0);
@@ -475,19 +664,29 @@ static irqreturn_t synaptics_ts_irq_handler(int irq, void *dev_id)
 {
 	struct synaptics_ts_data *ts = dev_id;
 
+//	DEBUG_MSG("LGE: synaptics_ts_irq_handler\n");
+//	printk("LGE: synaptics_Ts_irq_handler>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>..%d\n",ts->client->irq);
 	disable_irq_nosync(gpio_to_irq(ts->client->irq));
+//	printk("LGE1: synaptics_Ts_irq_handler>>>>>>>>>..\n");
 	queue_work(synaptics_wq, &ts->work);
 	return IRQ_HANDLED;
 }
 
+//added by jykim using kukyongku source
+//#include <mach/control.h>
 static void Touch_reboot(void){
     DEBUG_MSG("LGE:Heaven Synaptics Touch IC reboot \n");
+   // gpio_direction_output(TOUCH_INT, 0);
+   // msleep(500);
+   // gpio_set_value(TOUCH_INT, 0);
+   // msleep(500);
     gpio_direction_output(HEAVEN_TS_EN_GPIO, 0);
     msleep(500);
     gpio_set_value(HEAVEN_TS_EN_GPIO, 1);
     msleep(400);
 
 }
+//ended by jykim
 static void check_FW(struct i2c_client *client)
 {
 
@@ -558,6 +757,7 @@ static int synaptics_ts_probe(
 	}
 
 	if (pdata) {
+//	if (pdata) {
 		while (pdata->version > panel_version)
 			pdata++;
 		ts->flags = pdata->flags;
@@ -605,6 +805,9 @@ static int synaptics_ts_probe(
 	/*************************************************************************************************
 	 * 3. Power up
 	 *************************************************************************************************/
+//	Touch_reboot();		//added by jykim
+//    gpio_set_value(BLUE_LED_GPIO, 0);
+//	udelay(300);
 
 	/*************************************************************************************************
 	 * 4. Read RMI Version
@@ -625,9 +828,21 @@ static int synaptics_ts_probe(
 	}
 
 	ret = i2c_smbus_write_byte_data(ts->client, SYNAPTICS_CONTROL_REG, SYNAPTICS_CONTROL_NOSLEEP);
+	#if 0
+	ret = i2c_smbus_write_byte_data(ts->client, 0x53, 0x03);
+	ret = i2c_smbus_write_byte_data(ts->client, 0x54, 0x03);
+	#else	/* JamesLee :: for 4.3inch touch - I guess it's delta x, y thresh */
 	ret = i2c_smbus_write_byte_data(ts->client, 0x25, 0x03);
 	ret = i2c_smbus_write_byte_data(ts->client, 0x26, 0x03);
+	#endif
 
+//	ret = i2c_smbus_write_byte_data(ts->client, 0x9B, 32);
+//	ret = i2c_smbus_write_byte_data(ts->client, 0x9C, 32);
+
+//	max_low = (unsigned char)i2c_smbus_read_byte_data(ts->client, 0x58);
+//	max_high = (unsigned char)i2c_smbus_read_byte_data(ts->client, 0x59); 
+
+//	max_x = max_high <<8
 	ts->input_dev = input_allocate_device();
 	if (ts->input_dev == NULL) {
 		ret = -ENOMEM;
@@ -680,8 +895,13 @@ static int synaptics_ts_probe(
 	DEBUG_MSG(KERN_INFO "synaptics_ts_probe: snap_x %d-%d %d-%d, snap_y %d-%d %d-%d\n",
 	       snap_left_on, snap_left_off, snap_right_on, snap_right_off,
 	       snap_top_on, snap_top_off, snap_bottom_on, snap_bottom_off);
+#if 0
+	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X, 0, 986, fuzz_x, 0);
+	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y, 0, 1644, fuzz_y, 0);
+#else	/* JamesLee :: for 4.3 inch touch */
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X, 0, 1123, fuzz_x, 0);
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y, 0, 1872, fuzz_y, 0);
+#endif
 	input_set_abs_params(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0, 15, fuzz_w, 0);
 	input_set_abs_params(ts->input_dev, ABS_MT_WIDTH_MAJOR, 0, 15, fuzz_w, 0);
 		input_set_abs_params(ts->input_dev, SYN_TG_REPORT, 0, 3, 0, 0);
@@ -706,6 +926,13 @@ static int synaptics_ts_probe(
 	
 	if (client->irq) {
 		ret = request_irq(gpio_to_irq(client->irq), synaptics_ts_irq_handler, irqflags, client->name, ts);
+//		if (ret == 0) {
+			//ret = i2c_smbus_write_byte_data(ts->client, 0xf1, 0x01); /* enable abs int */
+			/* Enable ABS0 and Button Interrupt */
+//			ret = i2c_smbus_write_byte_data(ts->client, SYNAPTICS_INT_REG, SYNAPTICS_INT_ABS0|SYNAPTICS_INT_BUTTON);
+//			if (ret)
+//				free_irq(client->irq, ts);
+//		}
 		if (ret == 0) {
 			ts->use_irq = 1;
 			DEBUG_MSG("request_irq\n");
@@ -757,6 +984,8 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 {
 	int ret;
 	struct synaptics_ts_data *ts = i2c_get_clientdata(client);
+//   printk("SELWIN:@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@222\n"); 
+//  gpio_set_value(BLUE_LED_GPIO, 1);
 	if (ts->use_irq)
 		disable_irq(gpio_to_irq(client->irq));
 	else
@@ -782,18 +1011,17 @@ static int synaptics_ts_resume(struct i2c_client *client)
 	struct synaptics_ts_data *ts = i2c_get_clientdata(client);
 
 	check_FW(client);
+//    gpio_set_value(BLUE_LED_GPIO, 0);
 	if (ts->power) {
 		ret = ts->power(1);
 		if (ret < 0)
 			printk(KERN_ERR "synaptics_ts_resume power on failed\n");
 	}
 	
-
 	i2c_smbus_read_i2c_block_data(ts->client, START_ADDR, sizeof(ts_reg_data), &ts_reg_data);
    	i2c_smbus_write_byte_data(ts->client, SYNAPTICS_CONTROL_REG, SYNAPTICS_CONTROL_NOSLEEP); /* wake up */
 	ret = i2c_smbus_write_byte_data(ts->client, 0x53, 0x03);
 	ret = i2c_smbus_write_byte_data(ts->client, 0x54, 0x03);
-
 
 	if (ts->use_irq)
 		enable_irq(gpio_to_irq(client->irq));
@@ -824,9 +1052,8 @@ static void synaptics_ts_late_resume(struct early_suspend *h)
 
 static const struct i2c_device_id synaptics_ts_id[] = {
 	{ "heaven_synaptics_ts", 0 },
-
 	{ },
-
+	//{ }
 };
 
 static struct i2c_driver synaptics_ts_driver = {
@@ -838,6 +1065,7 @@ static struct i2c_driver synaptics_ts_driver = {
 #endif
 	.id_table	= synaptics_ts_id,
 	.driver = {
+		//.name	= "heaven_i2c_ts",
 		.name	= "heaven_synaptics_ts",
 		.owner = THIS_MODULE,
 	},
@@ -846,6 +1074,7 @@ static struct i2c_driver synaptics_ts_driver = {
 static int __devinit synaptics_ts_init(void)
 {
 	synaptics_wq = create_singlethread_workqueue("synaptics_wq");
+//	synaptics_wq = __create_workqueue("synaptics_wq", 1, 0, 1);
     	DEBUG_MSG ("LGE: Synaptics ts_init\n");
 	if (!synaptics_wq)
 		return -ENOMEM;

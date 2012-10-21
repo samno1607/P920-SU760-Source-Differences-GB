@@ -27,6 +27,7 @@
 #include <asm/atomic.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
+// Darren.Kang 2010.12.24 for cosmo-panel definition
 #include <linux/hrtimer.h>
 
 
@@ -207,7 +208,6 @@ enum omap_dss_display_state {
 	OMAP_DSS_DISPLAY_ACTIVE,
 	OMAP_DSS_DISPLAY_SUSPENDED,
 	OMAP_DSS_DISPLAY_TRANSITION,
-	
 	OMAP_DSS_DISPLAY_ACTIVE_NO_DRAW,
 };
 
@@ -371,10 +371,12 @@ enum omap_dsi_index {
 	DSI2 = 1,
 };
 
+#if 1	/* JamesLee :: Video Mode */
 enum omap_dsi_mode {
 	OMAP_DSI_MODE_CMD = 0,
 	OMAP_DSI_MODE_VIDEO = 1,
 };
+#endif
 void dsi_bus_lock(enum omap_dsi_index ix);
 void dsi_bus_unlock(enum omap_dsi_index ix);
 int dsi_vc_dcs_write(enum omap_dsi_index ix, int channel,
@@ -396,10 +398,8 @@ int dsi_vc_set_max_rx_packet_size(enum omap_dsi_index ix,
 int dsi_vc_send_null(enum omap_dsi_index ix, int channel);
 int dsi_vc_send_bta_sync(enum omap_dsi_index ix, int channel);
 
-
 int dsi_enable_dcs_cmd(struct omap_dss_device *dssdev,enum omap_dsi_index ix);
 int dsi_disable_dcs_cmd(struct omap_dss_device *dssdev,enum omap_dsi_index ix);
-
 
 /* Board specific data */
 #define PWM2ON		0x03
@@ -455,8 +455,10 @@ struct omap_video_timings {
 	u16 vfp;	/* Vertical front porch */
 	/* Unit: line clocks */
 	u16 vbp;	/* Vertical back porch */
+#if	1	// by dongjin73.kim, parameter for Video Mode
 	u16 hsa;
 	u16 vsa;
+#endif
 };
 
 struct omap_color_conv_coef {
@@ -495,7 +497,7 @@ struct omap_ccs_matrix {
 	s16 bcr;
 	s16 bcb;	
 };
-#endif
+#endif // LGE_FW_TDMB
 
 #ifdef CONFIG_OMAP2_DSS_VENC
 /* Hardcoded timings for tv modes. Venc only uses these to
@@ -506,14 +508,12 @@ extern const struct omap_video_timings omap_dss_pal_timings;
 extern const struct omap_video_timings omap_dss_ntsc_timings;
 #endif
 
-
 enum omap_dss_overlay_s3d_type {
 	omap_dss_overlay_s3d_none = 0,
 	omap_dss_overlay_s3d_top_bottom = 1,
 	omap_dss_overlay_s3d_side_by_side = 2,
 	omap_dss_overlay_s3d_interlaced = 4,
 };
-
 struct omap_overlay_info {
 	bool enabled;
 
@@ -527,10 +527,8 @@ struct omap_overlay_info {
 	u8 rotation;
 	enum omap_dss_rotation_type rotation_type;
 	bool mirror;
-
-	int status;
+	int status; 
 	char  manager[16];
-
 	u16 pos_x;
 	u16 pos_y;
 	u16 out_width;	/* if 0, out_width == width */
@@ -542,8 +540,11 @@ struct omap_overlay_info {
 	enum device_n_buffer_type field;
 	u16 pic_height;	/* required for interlacing with cropping */
 	bool out_wb; /* true when this overlay only feeds wb pipeline */
-	
 	enum omap_dss_overlay_s3d_type s3d_type;
+	u16 portrait_pos_x;
+	u16 portrait_pos_y;
+	u16 portrait_out_width;
+	u16 portrait_out_height;
 };
 
 #define DSI1_GPIO_27 27
@@ -722,7 +723,9 @@ struct omap_dss_device {
 			u8 data1_pol;
 			u8 data2_lane;
 			u8 data2_pol;
+#if 1	/* JamesLee :: Video Mode */
 			u8 num_data_lanes;
+#endif
 			struct {
 				u16 regn;
 				u16 regm;
@@ -737,6 +740,7 @@ struct omap_dss_device {
 
 			bool ext_te;
 			u8 ext_te_gpio;
+#if 1	/* JamesLee :: Video Mode */
                         enum omap_dsi_mode mode;
  
                         struct {
@@ -747,6 +751,7 @@ struct omap_dss_device {
                                 u16 vfp;
                                 u16 vsa;
                         } timings;
+#endif
 		} dsi;
 
 		struct {
@@ -764,6 +769,10 @@ struct omap_dss_device {
 
 		enum omap_panel_config config;
 		struct s3d_disp_info s3d_info;
+#if defined (CONFIG_MACH_LGE_CX2) 
+		u32 width_in_mm;
+		u32 height_in_mm;
+#endif
 	} panel;
 
 	struct {
@@ -802,7 +811,7 @@ struct omap_dss_device {
 
 #ifdef LGE_FW_TDMB
 	int (*set_ccs)(struct omap_dss_device * dssdev, struct omap_ccs_matrix * ccs_info);
-#endif
+#endif // LGE_FW_TDMB
 
 	/* platform specific  */
 	int (*platform_enable)(struct omap_dss_device *dssdev);
@@ -878,7 +887,6 @@ struct omap_dss_driver {
 	/* resets display.  returns status (of reenabling the display).*/
 	int (*reset)(struct omap_dss_device *dssdev,
 					enum omap_dss_reset_phase phase);
-	
 	int (*hpd_disable)(struct omap_dss_device *dssdev);
 
 	/* S3D specific */
@@ -1008,6 +1016,7 @@ int omap_rfbi_update(struct omap_dss_device *dssdev,
 void change_base_address(int id, u32 p_uv_addr);
 bool is_hdmi_interlaced(void);
 
+// Darren.Kang 2010.12.24 Moved from panel-cosmo.c/omaplfb_linux.c [ST]
 struct cosmo_panel_data {
 		struct backlight_device *bldev;
 
@@ -1039,6 +1048,7 @@ struct cosmo_panel_data {
 		bool barrier_enabled;
 
 };
+// Darren.Kang 2010.12.24 Moved from panel-cosmo.c/omaplfb_linux.c [END]
 
 
 #endif

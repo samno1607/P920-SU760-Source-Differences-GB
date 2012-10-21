@@ -263,11 +263,12 @@ enum hdmi_s3d_frame_structure {
 	HDMI_S3D_L_DEPTH                = 4,
 	HDMI_S3D_L_DEPTH_GP_GP_DEPTH    = 5,
 	HDMI_S3D_SIDE_BY_SIDE_HALF      = 8
-	
 	,
 	HDMI_S3D_TOP_AND_BOTTOM			= 6,
-		
-	
+		//HDMI 1.4a 3D video format extension.
+		//Vendor Specific InfoFrame packet PB5 Significant Nibble 3D_Structure
+		//		0110 : Top and Bottom
+		//		1000 : Side-by-Side (Half)
 };
 
 /* Subsampling types used for Sterioscopic 3D over HDMI. Below HOR
@@ -317,9 +318,7 @@ static const struct omap_video_timings all_timings_direct[] = {
 	{1440, 288, 27000, 126, 24, 138, 3, 2, 19},
 	{1920, 540, 74250, 44, 528, 148, 5, 2, 15},
 	{1920, 540, 74250, 44, 88, 148, 5, 2, 15},
-
 	{1920, 1080, 148500, 44, 88, 148, 5, 4, 36},
-
 	{720, 576, 27000, 64, 12, 68, 5, 5, 39},
 	{1440, 576, 54000, 128, 24, 136, 5, 5, 39},
 	{1920, 1080, 148500, 44, 528, 148, 5, 4, 36},
@@ -1133,6 +1132,9 @@ static int hdmi_early_suspend(struct omap_dss_device *dssdev)
 		break;
 	case HDMI_STATUS_PLUG_ESTABLISHED :
 		DSSINFO("HDMI cable is plugged. not suspend\n");
+//		mutex_lock(&hdmi.play_status_lock);
+//		hdmi_video_stop_real_with_play_status_lock();
+//		mutex_unlock(&hdmi.play_status_lock);
 		ret = -EPERM;
 		break;
 	default:
@@ -1242,7 +1244,6 @@ static void hdmi_enable_clocks(int enable)
 		mutex_unlock(&hdmi.clock_lock);
 	}
 }
-
 bool hdmi_state(void)
 {
 	return (hdmi_get_internal_status()==HDMI_STATUS_PLUG_ESTABLISHED);
@@ -1299,7 +1300,6 @@ int hdmi_init(struct platform_device *pdev)
 	hdmi.pdev = pdev;
 
 	hdmi_mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	
 	if(!hdmi_mem) {
                 ERR("can't alloc hdmi_mem\n");
                 return -ENOMEM;
@@ -1477,7 +1477,7 @@ static int hdmi_connect_device(struct omap_dss_device *dssdev)
 	if (!hdmi.connection.custom_set) {
 		code = get_timings_index_with_connection_lock();
 
-  		HDMI_W1_SetWaitSoftReset();
+  		HDMI_W1_SetWaitSoftReset(); // 2011-03-19 novashock.lee READ EDID Fail patch. //
 		DSSDBG("No edid set thus will be calling hdmi_read_edid");
 		r = hdmi_read_edid_with_connection_lock(p);
 		if (r) {
@@ -1719,6 +1719,11 @@ static void hdmi_status_to_off_with_status_lock(struct omap_dss_device *dssdev)
 	{
 		int retval =0;
 		pr_debug("test\n");
+		retval = omap_pm_set_min_bus_tput(&dssdev->dev,	OCP_INITIATOR_AGENT, -1);		
+		if (retval) {
+			pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
+			return; //return PM_UNSUPPORTED;
+		}
 		retval = omap_pm_set_max_mpu_wakeup_lat(&pm_hdmi_qos_handle, -1);
 		if (retval) {
 			pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
@@ -1850,7 +1855,6 @@ static int hdmi_status_move_to_with_status_lock(enum hdmi_internal_status new_st
 				hdmi.status.status = HDMI_STATUS_UNDEFINED;
 				return ret;
 			}
-
 			//When connection established, audio parameters are fixed
 			//SO CTS can be sent from this phase
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
@@ -1863,11 +1867,15 @@ static int hdmi_status_move_to_with_status_lock(enum hdmi_internal_status new_st
 			}
 #endif
 
-
 #ifdef CONFIG_OMAP_PM
 			{
 				int retval =0;
 				pr_debug("test\n");
+				retval = omap_pm_set_min_bus_tput(&dssdev->dev,	OCP_INITIATOR_AGENT, 200 * 1000 * 4);		
+				if (retval) {
+					pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
+					return; //return PM_UNSUPPORTED;
+				}
 				retval = omap_pm_set_max_mpu_wakeup_lat(&pm_hdmi_qos_handle,  IPU_PM_MM_MPU_LAT_CONSTRAINT);
 				if (retval) {
 					pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
@@ -1877,6 +1885,14 @@ static int hdmi_status_move_to_with_status_lock(enum hdmi_internal_status new_st
 #endif
 
 			wake_lock(&hdmi.status.hdmi_wake_lock);
+			//Current status : There is no handler for HDMI_EVENT_POWER
+			//Later hdmi notify should be removed
+//			//not good
+//			mutex_unlock(&hdmi.status_lock);
+//			mdelay(50);		//I don't know T_T
+//			hdmi_notify_pwrchange(HDMI_EVENT_POWERON);
+//			mdelay(50);		//I don't know T_T
+//			mutex_lock(&hdmi.status_lock);
 
 			///////////////////////////////////////////
 			dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
@@ -1910,14 +1926,12 @@ static int hdmi_status_move_to_with_status_lock(enum hdmi_internal_status new_st
 		switch ( status )
 		{
 		case HDMI_STATUS_PLUG_ESTABLISHED:
-
 			//CTS Should must be done before power off
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
 			DSSINFO("HDMI CTS stop\n");
 			if (hdmi_lib_stop_acr_wa())
 				DSSERR("HDMI WA may be in bad state");
 #endif
-
 
 			//to PLUG REQUEST
 			//not good
@@ -1941,6 +1955,11 @@ static int hdmi_status_move_to_with_status_lock(enum hdmi_internal_status new_st
 			{
 				int retval =0;
 				pr_debug("test\n");
+				retval = omap_pm_set_min_bus_tput(&dssdev->dev,	OCP_INITIATOR_AGENT, -1);		
+				if (retval) {
+					pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
+					return; //return PM_UNSUPPORTED;
+				}
 				retval = omap_pm_set_max_mpu_wakeup_lat(&pm_hdmi_qos_handle, -1);
 				if (retval) {
 					pr_err("%s %d Error setting MPU cstr\n", __func__, __LINE__);
@@ -2215,9 +2234,16 @@ CHANGE_WAIT:
 
 		//if there is no irq assert during 500ms
 		DSSDBG("Waiting HDMI connection status change during 500ms\n");
+
+#if defined (CONFIG_MACH_LGE_CX2)
+		changed = wait_event_timeout(hdmi.plug_status.change_wait,
+							hdmi.plug_status.changed==true,
+							15 * HZ / 10	);
+#else
 		changed = wait_event_timeout(hdmi.plug_status.change_wait,
 							hdmi.plug_status.changed==true,
 							5 * HZ / 10	);
+#endif
 		if ( changed )	//irq asserted
 		{
 			DSSDBG("HDMI connection status changed. wait again\n");
@@ -2460,9 +2486,7 @@ static void hdmi_get_timings(struct omap_dss_device *dssdev,
 static void hdmi_set_timings(struct omap_dss_device *dssdev,
 			struct omap_video_timings *timings)
 {
-	
 	int ret = 0;
-	
 
 	DSSDBG("hdmi_set_timings\n");
 
@@ -2470,7 +2494,6 @@ static void hdmi_set_timings(struct omap_dss_device *dssdev,
 
 	if ( get_dss_state(dssdev) == OMAP_DSS_DISPLAY_ACTIVE)
 	{
-		
 		/* turn the phy off and on to get new timings to use */
 		//hdmi_reset(dssdev, OMAP_DSS_RESET_BOTH);
 
@@ -2483,7 +2506,6 @@ static void hdmi_set_timings(struct omap_dss_device *dssdev,
 		}
 		mutex_unlock(&hdmi.status_lock);
 		hdmi_check_status_and_transit();
-		
 	}
 	
 }
@@ -2909,7 +2931,6 @@ int hdmi_init_display(struct omap_dss_device *dssdev)
 
 static int hdmi_read_edid_with_connection_lock(struct omap_video_timings *dp)
 {
-
 	int r = 0, ret=0, code=0;
 
 	memset(hdmi.connection.edid, 0, HDMI_EDID_MAX_LENGTH);
@@ -2924,7 +2945,6 @@ static int hdmi_read_edid_with_connection_lock(struct omap_video_timings *dp)
 //		return ret;
 	} else {
 		if (!memcmp(hdmi.connection.edid, header, sizeof(header))) {
-			
 			hdmi.connection.s3d_switch_support = hdmi_s3d_supported(hdmi.connection.edid);
 			if (hdmi.connection.s3d_enabled) {
 				/* Update flag to convey if sink supports 3D */
@@ -3398,6 +3418,7 @@ int hdmi_video_prepare_change(void *id, int layer_count, bool add_or_change, cha
 		}
 	}
 
+//	if ( needs_stop && HDMI_WP_get_video_status() )
 	if ( needs_stop && hdmi.play_status.video_play_enabled )
 	{
 		DSSDBG("Stop HDMI Video\n");

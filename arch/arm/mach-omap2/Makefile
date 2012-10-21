@@ -81,6 +81,7 @@ obj-$(CONFIG_ARCH_OMAP4)		+= cm4xxx.o
 
 # EMIF
 obj-$(CONFIG_ARCH_OMAP4)		+= emif.o lpddr2_jedec_data.o lpddr2_elpida_data.o
+obj-$(CONFIG_MACH_LGE_CX2_EVB)  += lpddr2_samsung_data.o
 
 # Clock framework
 obj-$(CONFIG_ARCH_OMAP2)		+= $(clock-common) clock2xxx.o \

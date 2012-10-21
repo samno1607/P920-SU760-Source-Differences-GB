@@ -189,7 +189,7 @@ void request_suspend_state(suspend_state_t new_state)
 	}
 	else
 	{
-#if LGE_EARLYSUSPEND_DEBUG		
+#if LGE_EARLYSUSPEND_DEBUG	
 		pr_info("request_suspend_state (case)[%d][%d]\n", old_sleep, new_state);
 #else
 		if (new_state != PM_SUSPEND_ON) {

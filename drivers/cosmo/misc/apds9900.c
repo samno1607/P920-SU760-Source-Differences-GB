@@ -89,22 +89,22 @@
 #define PTIME 	 	0xff 	// 2.72ms . minimum Prox integration time
 #define INT_PERS 	0x33
 
-#if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC)
-//SU760
+#if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC) && defined(CONFIG_MACH_LGE_COSMO_DOMASTIC_REV_B)
+//SU760_Rev_B,A
 #define PPCOUNT 	8
 #elif  !defined(CONFIG_MACH_LGE_COSMO_EVB_C) && !defined(CONFIG_MACH_LGE_COSMO_REV_A) && !defined(CONFIG_MACH_LGE_COSMO_REV_B) && !defined(CONFIG_MACH_LGE_COSMO_REV_C)
 //Rev_D
-#define PPCOUNT 	6
+#define PPCOUNT 	6 // 20110219 HW requirement <== 12    // 20101228 HW requirement<= 7 // 20101228 HW requirement<= 4 // Minimum prox pulse count
 #else
 //Rev_C
-#define PPCOUNT 	7
+#define PPCOUNT 	7 // 20101228 HW requirement<= 4 // Minimum prox pulse count
 #endif
 #define PDRIVE 	 	0 		//100mA of LED Power
 #define PDIODE 	 	0x20 	// IR Diode
 #define PGAIN 	 	0x00 	//1x Prox gain
 #define AGAIN 		0x00 	//1x ALS gain
 
-#if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC) && defined(CONFIG_MACH_LGE_COSMO_DOMASTIC_REV_B)
+#if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC) && defined(CONFIG_MACH_LGE_COSMO_DOMASTIC_REV_B) 
 #define COSMO_APDS_PROXIITY_HIGH_THRESHHOLD	600
 #define COSMO_APDS_PROXIITY_LOW_THRESHHOLD	500
 #else
@@ -116,7 +116,7 @@
 #define COSMO_APDS_COEFFICIENT_C	67 //0.67*100
 #define COSMO_APDS_COEFFICIENT_D	128 //1.28*100
 
-#define COSMO_APDS_GA 173
+#define COSMO_APDS_GA 173 //215 // org_value = 1.83 -> *100 
 #define COSMO_APDS_DF 52
 
 #define APDS9900_STATUS_PINT	0x20
@@ -157,6 +157,7 @@ struct apds9900_data {
 
 	unsigned int lth_prox;
 	unsigned int hth_prox;
+	// kk 20 Apr 2011
 	unsigned int ps_detection;		/* 0 = far-to-near;	1 = near-to-far */
 
 	unsigned int GA;
@@ -293,7 +294,7 @@ static int apds9900_set_pilt(struct i2c_client *client, int threshold)
 	
 	ret = i2c_smbus_write_word_data(client, CMD_WORD|APDS9900_PILTL_REG, threshold);
 	
-	data->pilt = threshold;
+	data->pilt = threshold;	// kk 29 Apr 2011
 
 	return ret;
 }
@@ -305,7 +306,7 @@ static int apds9900_set_piht(struct i2c_client *client, int threshold)
 	
 	ret = i2c_smbus_write_word_data(client, CMD_WORD|APDS9900_PIHTL_REG, threshold);
 	
-	data->piht = threshold;
+	data->piht = threshold;	// kk 29 Apr 2011
 
 	return ret;
 }
@@ -411,6 +412,7 @@ static void apds_9900_init(void)
 	
 	apds9900_set_control(apds_9900_i2c_client, PDRIVE | PDIODE | PGAIN | AGAIN);
 
+	// kk 29 Apr 2011
 	apds9900_set_pilt(apds_9900_i2c_client, 1023); // to ensure first FAR interrupt
 	apds9900_set_piht(apds_9900_i2c_client, 0);
 
@@ -420,6 +422,7 @@ static void apds_9900_init(void)
 	data->lth_prox = COSMO_APDS_PROXIITY_LOW_THRESHHOLD;
 	data->hth_prox = COSMO_APDS_PROXIITY_HIGH_THRESHHOLD;
 
+	// kk 20 Apr 2011 - important to init as FAR position = no detect
 	data->ps_detection = 1;	/* 0 = far-to-near;	1 = near-to-far */
 
 	data->GA = COSMO_APDS_GA;
@@ -430,6 +433,7 @@ static void apds_9900_init(void)
 	apds9900_oldProximity = 2;
 
 
+	// kk 25 Apr 2011
 	printk("apds_9900_init DONE!\n");
 }
 
@@ -746,6 +750,7 @@ static ssize_t apds9900_store_interrupt(struct device *dev,
 	int val = 0;
 	int ret;
 
+	// kk 25 Apr 2011
 	printk("apds9900_store_interrupt = [%d] apds_9900_initlizatied [%d] \n",rdata, apds_9900_initlizatied);
 
 	if(enable_status == 0 && (rdata == STORE_INTERUPT_SELECT_PROXIMITY || rdata == STORE_INTERUPT_SELECT_ALS))
@@ -798,7 +803,7 @@ static ssize_t apds9900_store_interrupt(struct device *dev,
 		}
 		else		//disable
 		{
-			enable_PS_status = 0;
+			enable_PS_status = 0;	// kk 19 May 2011 
 
 			if(enable_ALS_status == 1)
 			{
@@ -844,6 +849,20 @@ static ssize_t apds9900_store_interrupt(struct device *dev,
 		}
 	}
 
+	// toggle irq enable
+	/*
+	if(data->enable & APDS9900_ENABLE_PON) // previous status : some sensor is alive
+	{   		
+		if((val & APDS9900_ENABLE_PON) == 0 ) // next status : whole sensors is deactived
+			disable_irq(data->irq);
+	}
+	else  // previous status : whole sensors is deactived
+	{
+		if( val & APDS9900_ENABLE_PON)// next status : some sensor is alive
+			enable_irq(data->irq);
+	}	
+       */
+
 	if(data->enable == 1)
 	{
 		data->enable = 0;
@@ -868,6 +887,7 @@ static ssize_t apds9900_store_interrupt(struct device *dev,
 		enable_irq(data->irq);
 	}
 
+	// kk 25 Apr 2011
 	printk("apds9900_store_interrupt enable_status = [%x] data->enable [%x] \n",enable_status, data->enable);
 
 	if (ret < 0)
@@ -973,6 +993,7 @@ void apds_9900_proximity_handler(struct apds9900_data *data, int cData)
 {
 	int rdata = i2c_smbus_read_word_data(apds_9900_i2c_client, CMD_WORD|APDS9900_PDATAL_REG);		
 	
+	// kk 25 Apr 2011
 	printk("prox sensor report data = [%d][%d][%d]\n",rdata, cData, apds9900_oldProximity);
 
 #ifdef APDS9900_WAKE_LOCK
@@ -986,6 +1007,7 @@ void apds_9900_proximity_handler(struct apds9900_data *data, int cData)
 
 	apds9900_proxidata = rdata;
 	
+// kk 29 Apr 2011	if(rdata > data->hth_prox && (cData < (75*(1024*(256-data->atime)))/100))
 	if ( (rdata > data->pilt) && (rdata >= data->piht) && (cData < (75*(1024*(256-data->atime)))/100))
 	{
 
@@ -997,13 +1019,16 @@ void apds_9900_proximity_handler(struct apds9900_data *data, int cData)
 			input_sync(data->input_dev);
 			apds9900_oldProximity = 0;
 		}
+		// kk 25 Apr 2011
 		apds9900_set_pilt(apds_9900_i2c_client, data->lth_prox);
 		apds9900_set_piht(apds_9900_i2c_client, 1023);	
 		
+		// kk 20 Apr 2011
 		data->ps_detection = 0;	/* 0 = far-to-near;	1 = near-to-far */
 
 		printk("apds_9900_proximity_handler = NEAR\n");	
 	}
+// kk 29 Apr 2011	else if(rdata < data->lth_prox) 
 	else if ( (rdata <= data->pilt) && (rdata < data->piht) )
 	{
 		apds9900_set_enable(apds_9900_i2c_client,0);
@@ -1017,6 +1042,7 @@ void apds_9900_proximity_handler(struct apds9900_data *data, int cData)
 		apds9900_set_pilt(apds_9900_i2c_client, 0);
 		apds9900_set_piht(apds_9900_i2c_client, data->hth_prox);
 
+		// kk 20 Apr 2011
 		data->ps_detection = 1;	/* 0 = far-to-near;	1 = near-to-far */
 
 		printk("apds_9900_proximity_handler = FAR 2 \n");	
@@ -1034,6 +1060,7 @@ void apds_9900_proximity_handler(struct apds9900_data *data, int cData)
 		apds9900_set_pilt(apds_9900_i2c_client, 0);
 		apds9900_set_piht(apds_9900_i2c_client, data->hth_prox);
 
+		// kk 20 Apr 2011
 		data->ps_detection = 1;	/* 0 = far-to-near;	1 = near-to-far */
 
 		printk("apds_9900_proximity_handler = FAR 3\n");	
@@ -1061,6 +1088,7 @@ void apds_9900_als_handler(struct apds9900_data *data)
 	// read reg for als
 	int cdata = i2c_smbus_read_word_data(apds_9900_i2c_client, CMD_WORD|APDS9900_CDATAL_REG);
 	int irdata = i2c_smbus_read_word_data(apds_9900_i2c_client, CMD_WORD|APDS9900_IRDATAL_REG);
+	// kk 25 Apr 2011
 	int pdata = i2c_smbus_read_word_data(apds_9900_i2c_client, CMD_WORD|APDS9900_PDATAL_REG);
 
 	// calculation LUX , please check datasheet from AVAGO
@@ -1069,6 +1097,7 @@ void apds_9900_als_handler(struct apds9900_data *data)
     APDS_IAC = APDS_IAC1>APDS_IAC2?APDS_IAC1:APDS_IAC2;
 	LUX = (APDS_IAC*data->LPC)/100;	
 
+	// kk 20 Apr 2011 - check PS under sunlight
 	if ( (data->ps_detection == 0) && (cdata > (75*(1024*(256-data->atime)))/100))	// PS was previously in far-to-near condition
 	{
 		// need to inform input event as there will be no interrupt from the PS
@@ -1081,6 +1110,7 @@ void apds_9900_als_handler(struct apds9900_data *data)
 		apds9900_set_pilt(apds_9900_i2c_client, 0);
 		apds9900_set_piht(apds_9900_i2c_client, data->hth_prox);
 
+		// kk 20 Apr 2011
 		data->ps_detection = 1;	/* 0 = far-to-near;	1 = near-to-far */
 
 		printk("apds_9900_proximity_handler = FAR 4\n");	
@@ -1117,6 +1147,7 @@ void apds_9900_als_handler(struct apds9900_data *data)
 	apds9900_set_ailt(apds_9900_i2c_client, LTH);
 	apds9900_set_aiht(apds_9900_i2c_client, HTH);
 
+	// kk 25 Apr 2011
 	printk("light sensor report lux =%d cdata = %d irdata = %d, pdata= %d\n",LUX,cdata,irdata, pdata);
 }
 
@@ -1130,6 +1161,7 @@ void apds_9900_irq_work_func(struct work_struct *work)
 
 	status = i2c_smbus_read_byte_data(apds_9900_i2c_client, CMD_BYTE|APDS9900_STATUS_REG);
 
+	// kk 25 Apr 2011
 	printk("apds_9900_irq_work_func status =[%x][%d]\n", status, data->ps_detection);
 
 	if(status & APDS9900_STATUS_PINT) 
@@ -1137,10 +1169,12 @@ void apds_9900_irq_work_func(struct work_struct *work)
 	
 		int cdata = i2c_smbus_read_word_data(apds_9900_i2c_client, CMD_WORD|APDS9900_CDATAL_REG);
 		
+		//if (cdata < (75*(1024*(256-data->atime)))/100)
 		{
 			apds_9900_proximity_handler(data, cdata);
 		}
 
+		// DEBUG_MSG("Triggered by background ambient noise [%d]\n", cdata);
 	}
 
 	if(status & APDS9900_STATUS_AINT)	
@@ -1148,6 +1182,16 @@ void apds_9900_irq_work_func(struct work_struct *work)
 		apds_9900_als_handler(data);			
 	}
 
+	//DEBUG_MSG("apds_9900_irq_work_func status = %d\n",status);
+
+	
+	/*
+	// sensor status check and enable irq
+	if(data->enable & APDS9900_ENABLE_PON)
+	{
+		enable_irq(data->irq);
+	}
+	*/
 
 	// ACK about interupt handling
 	if(status & APDS9900_STATUS_PINT || data->enable & APDS9900_ENABLE_PIEN)
@@ -1325,7 +1369,7 @@ static int apds9900_suspend(struct i2c_client *client, pm_message_t mesg)
 
 	printk("apds9900_suspend [%d][%d]\n", data->enable, gpiovalue);
 
-	if(data->enable & APDS9900_ENABLE_PIEN)
+	if((data->enable & APDS9900_ENABLE_PIEN) && (gpiovalue == 0))
 	{
 		apds_9900_irq_work_func(NULL);
 	}

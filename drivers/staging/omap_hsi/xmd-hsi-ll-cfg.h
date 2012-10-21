@@ -32,8 +32,8 @@
 #define HSI_LL_FRAME_MODE           HSI_MODE_FRAME
 
 /* Priority mode */
-#define HSI_LL_ARBMODE_ROUNDROBIN   HSI_ARBMODE_ROUNDROBIN  /* Round Robin Mode */
-#define HSI_LL_ARBMODE_PRIORITY     HSI_ARBMODE_PRIORITY    /* Priority Mode */
+#define HSI_LL_ARBMODE_ROUNDROBIN   HSI_ARBMODE_ROUNDROBIN/* Round Robin Mode*/
+#define HSI_LL_ARBMODE_PRIORITY     HSI_ARBMODE_PRIORITY  /* Priority Mode */
 
 /* Default settings */
 #define HSI_LL_INTERFACE_MODE       HSI_LL_FRAME_MODE
@@ -43,51 +43,80 @@
 /* Frame Size */
 #define HSI_LL_MAX_FRAME_SIZE       HSI_FRAMESIZE_DEFAULT
 
-
+/* For 96MHZ Base CLK, 96MHZ(0) 48MHZ(1)  24MHZ(3)
+    Divisor value => HSI CLK == HSI base CLK/(1+divisor value)
+    Clock Change 48MHz => 96MHz */
 #define HSI_LL_DIVISOR_VALUE        HSI_DIVISOR_DEFAULT /* For 96MHZ Base CLK, 96MHZ(0) 48MHZ(1)  24MHZ(3) */
 
 /*To enable Power management */
 #define HSI_LL_ENABLE_PM
 
-#define HSI_LL_COUNTERS_VALUE       HSI_COUNTERS_FT_DEFAULT | HSI_COUNTERS_TB_DEFAULT | HSI_COUNTERS_FB_DEFAULT
+#define HSI_LL_COUNTERS_VALUE	   (HSI_COUNTERS_FT_DEFAULT | \
+									HSI_COUNTERS_TB_DEFAULT | \
+									HSI_COUNTERS_FB_DEFAULT)
 
 #ifdef CONFIG_MACH_LGE_COSMO_REV_C
 /* Work around for Modem Bug for TX/RX data buffer size config. Size should be multiple of 16 */
 /* Enable for ES1 XG626(RevC) & Disable ES2 XG626(RevD~)*/
-#define HSI_LL_DATA_MUL_OF_16 */
+//#define HSI_LL_DATA_MUL_OF_16 */
 #endif
 
 /* Enable timers for DLP recovery. */
-/* NOTE: This will initiate onlY DLP recovery and not TTY/RMNET or RIL recover ,
-   For RIL recovery this timer should be disabled as 2 timers can only create SYNC issues */
+/* NOTE: This will initiate onlY DLP recovery and not TTY/RMNET or RIL recover,
+   For RIL recovery this timer should be disabled as 2 timers can only create
+   SYNC issues */
 /* #define HSI_LL_ENABLE_TIMERS */
 
-#define HSI_LL_MAX_OPEN_CONN_RETRIES          5       /* Max Retries for OPEN_CONNECT_OCTECT */
+/* Use this define if TX retry delay WQ has to be enabled.
+   If MODEM has logic where it does not send NAK, then below define
+   is not required.*/
+/* #define HSI_LL_ENABLE_TX_RETRY_WQ */
+
+/* Enable this to make sure that NAK is not sent to MODEM if buf is not
+   available. When buf is not available AP does not send any response(NAK)
+   instead waits for buffer and then sends NAK. Also it's necessarry that
+   MODEM TX Timers should be disabled to avoid CP side TX timeouts.*/
+#define HSI_LL_ENABLE_RX_BUF_RETRY_WQ
+
+#define HSI_LL_MAX_OPEN_CONN_RETRIES		5 //200       /* Max Retries for OPEN_CONNECT_OCTECT */
 
 /* L1 Recovery */
 #define HSI_LL_MAX_ERROR_RETRY               10
-#define HSI_LL_ERROR_RECOVERY_TIME_MS        10 
+#define HSI_LL_ERROR_RECOVERY_TIME_MS        10
 
 /* Timeout in ms */
-#define HSI_LL_TX_T_OPEN_CONN_MAX_MS          5       /* Send OPEN_CONN */
-#define HSI_LL_TX_T_CONF_RATE_MAX_MS          5       /* Send CONF_RATE */
-#define HSI_LL_TX_T_ACK_MAX_MS               10       /* Wait for ACK or NACK */
-#define HSI_LL_TX_T_CONN_READY_MS            15       /* Wait for CONN_READY */
-#define HSI_LL_TX_T_CONN_CLOSED_MAX_MS       10       /* Wait for CONN_CLOSE */
-#define HSI_LL_TX_T_BREAK_MAX_MS              5       /* Send BREAK */
+/* Send OPEN_CONN */
+#define HSI_LL_TX_T_OPEN_CONN_MAX_MS          5
+/* Send CONF_RATE */
+#define HSI_LL_TX_T_CONF_RATE_MAX_MS          5
+/* Wait for ACK or NACK */
+#define HSI_LL_TX_T_ACK_MAX_MS               10
+/* Wait for CONN_READY */
+#define HSI_LL_TX_T_CONN_READY_MS            15
+/* Wait for CONN_CLOSE */
+#define HSI_LL_TX_T_CONN_CLOSED_MAX_MS       10
+/* Send BREAK */
+#define HSI_LL_TX_T_BREAK_MAX_MS              5
 #define HSI_LL_TX_T_CONN_OPEN_RETRY_MS       15
 
-#define HSI_LL_TX_N_RETRY_MAX                 5       /* To be multiplied with LL_TX_T_CONN_OPEN_RETRY_MS */
+/* To be multiplied with LL_TX_T_CONN_OPEN_RETRY_MS */
+#define HSI_LL_TX_N_RETRY_MAX                 5
 
-#define HSI_LL_RX_T_ACK_NACK_MS               5       /* Send ACK or NAK */
-#define HSI_LL_RX_T_CONN_READY_MS             5       /* Send CONN_READY */
-#define HSI_LL_RX_T_BREAK_MAX_MS              5       /* Send BREAK */
-#define HSI_LL_RX_T_CONN_CLOSED_MAX_MS        5       /* Send CONN_CLOSED */
-#define HSI_LL_RX_T_CANCEL_CONN_MS            5       /* Send CANCEL_CONN */
-#define HSI_LL_RX_T_CANCEL_ACK_NACK_MS       10       /* Wait for ACK/NACK after CANCEL_CONN */ 
+/* Send ACK or NAK */
+#define HSI_LL_RX_T_ACK_NACK_MS               5
+/* Send CONN_READY */
+#define HSI_LL_RX_T_CONN_READY_MS             5
+/* Send BREAK */
+#define HSI_LL_RX_T_BREAK_MAX_MS              5
+/* Send CONN_CLOSED */
+#define HSI_LL_RX_T_CONN_CLOSED_MAX_MS        5
+/* Send CANCEL_CONN */
+#define HSI_LL_RX_T_CANCEL_CONN_MS            5
+/* Wait for ACK/NACK after CANCEL_CONN */
+#define HSI_LL_RX_T_CANCEL_ACK_NACK_MS       10
 
-//#define HSI_LL_ENABLE_DEBUG_LOG
-//#define HSI_LL_ENABLE_CRITICAL_LOG
+/* #define HSI_LL_ENABLE_DEBUG_LOG */
+/* #define HSI_LL_ENABLE_CRITICAL_LOG */
 #define HSI_LL_ENABLE_ERROR_LOG
 
 #endif /* __XMD_HSI_LL_CFG_H__ */

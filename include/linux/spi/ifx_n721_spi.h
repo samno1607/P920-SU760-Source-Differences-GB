@@ -28,30 +28,39 @@
 
 
 
+// hgahn
+//#define MRDY_CFG_REG     		AA9_3430_GPIO_149	/* Used from Schematic file */
+//#define SRDY_CFG_REG     		AF11_3430_GPIO_14	/* Used from Schematic file */
 #define MRDY_CFG_REG     		AF9_3430_GPIO_22	/* Used from Schematic file */
 #define SRDY_CFG_REG     		AF11_3430_GPIO_21	/* Used from Schematic file */
-
 
 
 
 #if defined(CONFIG_MACH_LGE_E920)
 /* nothing */
 #else
-
+// hgahn
+//#define IFX_MRDY_GPIO			149	/* MRDY GPIO pin for IFX - According to Windows Mobile */
+//#define IFX_SRDY_GPIO			14	/* SRDY GPIO pin for IFX - According to Windows Mobile */
+//#define IFX_MRDY_GPIO			22	/* MRDY GPIO pin for IFX - According to Windows Mobile */
+//#define IFX_SRDY_GPIO			21	/* SRDY GPIO pin for IFX - According to Windows Mobile */
 #define IFX_MRDY_GPIO			120	/* MRDY GPIO pin for IFX - According to Windows Mobile */
 #define IFX_SRDY_GPIO			119	/* SRDY GPIO pin for IFX - According to Windows Mobile */
 
 
 
 #define MODEM_GPIO_AUDIO		95
-
+//#define MODEM_GPIO_PWRON		110
 #define MODEM_GPIO_PWRON		164
 
-#define MODEM_GPIO_PWRON_SW		3   	
+#define MODEM_GPIO_PWRON_SW		3   
 
 #endif
 
 
+// hgahn
+//#define IFX_SPI_MAX_BUF_SIZE		1528	/* Max buffer size */
+//#define IFX_SPI_DEFAULT_BUF_SIZE	128 	/* Default buffer size*/
 #define IFX_SPI_MAX_BUF_SIZE		2044	/* Max buffer size */
 #define IFX_SPI_DEFAULT_BUF_SIZE	2044 	/* Default buffer size*/
 

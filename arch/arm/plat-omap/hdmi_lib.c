@@ -43,10 +43,10 @@
 #include <linux/seq_file.h>
 #include <linux/hrtimer.h>
 
-
+/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI wake lock 2011-4-09*/
 #include <linux/sched.h>
 #include <linux/wait.h>
-
+/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */
 
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
 #include <syslink/ipc.h>
@@ -81,7 +81,7 @@
 #define HDMI_WP_WP_CLK				0x70ul
 #define HDMI_WP_WP_DEBUG_CFG			0x90ul
 #define HDMI_WP_WP_DEBUG_DATA			0x94ul
-
+/* LGE_CHANGE [wonki.choi@lge.com] HDMI rework 2011-4-21 */
 #define HDMI_WP_IRQENANBLE_CLR		0x30ul
 
 /* HDMI IP Core System */
@@ -236,13 +236,19 @@ static struct {
 	struct omap_chip_id audio_wa_chip_ids;
 	struct task_struct *wa_task;
 	u32 ack_payload;
+/* LGE_CHANGE [sanggu.han@lge.com] 2011-10-05 CX2 Base Version making*/
+///# LGE_CHANGE_S Apply P2 TI Patch
+#if defined (CONFIG_MACH_LGE_CX2)
+	bool audio_wa_started; /* HDMI WA guard*/ // [common] ducati crash bug TI patch
+#endif
+///# LGE_CHANGE_E
 #endif
 	u32 pixel_clock;
-	
+	/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI audio stop wait 2011-4-09*/
 	wait_queue_head_t audio_disable_wq;
 	bool	audio_enable;
 	bool	device_connected;
-	
+	/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */
 } hdmi;
 static DEFINE_MUTEX(hdmi_mutex);
 
@@ -392,10 +398,10 @@ int hdmi_core_ddc_edid(u8 *pEDID, int ext)
 		/* Clk SCL Devices */
 		REG_FLD_MOD(ins, HDMI_CORE_DDC_CMD, 0xA, 3, 0);
 
-		mdelay(100);
+		mdelay(100); // novashock.lee EDID READ PATCH FROM TI 
 		/* HDMI_CORE_DDC_STATUS__IN_PROG */
 		while (FLD_GET(hdmi_read_reg(ins, sts), 4, 4) == 1){
-			mdelay(10);
+			mdelay(10); // novashock.lee EDID READ PATCH FROM TI
 		}
 
 
@@ -1433,6 +1439,9 @@ int hdmi_lib_acr_wa_send_event(u32 payload)
 	long tout;
 	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
 
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
+#if 0
+		if (hdmi.notify_event_reg == HDMI_NOTIFY_EVENT_REG) {
 			notify_send_event(SYS_M3, 0, HDMI_AUDIO_WA_EVENT,
 					payload, 0);
 			if (signal_pending(current))
@@ -1442,16 +1451,63 @@ int hdmi_lib_acr_wa_send_event(u32 payload)
 			tout = schedule_timeout(msecs_to_jiffies(5000));
 			if (!tout)
 				return -EIO;
+			if (payload != hdmi.ack_payload)
+				return -EBADE;
+			return 0;
+		}
+		return -ENODEV;
+#else
+			notify_send_event(SYS_M3, 0, HDMI_AUDIO_WA_EVENT,
+					payload, 0);
+			if (signal_pending(current))
+				return -ERESTARTSYS;
+			hdmi.wa_task = current;
+			set_current_state(TASK_INTERRUPTIBLE);
+			tout = schedule_timeout(msecs_to_jiffies(5000));
+			if (!tout)
+				return -EIO;
+//			if (payload != hdmi.ack_payload)
+//			return -EBADE;
+#endif
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 	}
 	return 0;
 }
 int hdmi_lib_start_acr_wa(void)
 {
+/* LGE_CHANGE [sanggu.han@lge.com] 2011-10-05 CX2 Base Version making*/
+///# LGE_CHANGE_S Apply P2 TI Patch
+#if defined (CONFIG_MACH_LGE_CX2)
+	int ret = 0;
+
+	if (!hdmi.audio_wa_started) {
+		ret = hdmi_lib_acr_wa_send_event(hdmi.cts_interval);
+		if (!ret)
+			hdmi.audio_wa_started = true;
+	}
+	return ret;
+#else
 	return hdmi_lib_acr_wa_send_event(hdmi.cts_interval);
+#endif
+///#LGE_CHANGE_E
 }
 int hdmi_lib_stop_acr_wa(void)
 {
+/* LGE_CHANGE [sanggu.han@lge.com] 2011-10-05 CX2 Base Version making*/
+///# LGE_CHANGE_S Apply P2 TI Patch
+#if defined (CONFIG_MACH_LGE_CX2)
+	int ret = 0;
+	
+	if (hdmi.audio_wa_started) {
+		ret = hdmi_lib_acr_wa_send_event(0);
+		if (!ret)
+			hdmi.audio_wa_started = false;
+	}
+	return ret;
+#else
 	return hdmi_lib_acr_wa_send_event(0);
+#endif
+///#LGE_CHANGE_E
 }
 
 void hdmi_notify_event_ack_func(u16 proc_id, u16 line_id, u32 event_id,
@@ -1464,14 +1520,23 @@ void hdmi_notify_event_ack_func(u16 proc_id, u16 line_id, u32 event_id,
 	wake_up_process(hdmi.wa_task);
 }
 
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
+#if 0
+static int hdmi_syslink_notifier_call(struct notifier_block *nb,
+						unsigned long val, void *v)
+#else
 int hdmi_syslink_notifier_call(unsigned long val, void *v)
+#endif
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 {
 	int status = 0;
 	u16 *proc_id = (u16 *)v;
 
 	switch ((int)val) {
 	case IPC_START:
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
 		printk("\n*******hdmi_syslink_notifier_call(IPC_START)******* \n");
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 
 		if (*proc_id == multiproc_get_id("SysM3")) {
 			status = notify_register_event(SYS_M3, 0,
@@ -1482,7 +1547,9 @@ int hdmi_syslink_notifier_call(unsigned long val, void *v)
 		}
 		return status;
 	case IPC_STOP:
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
 		printk("\n*******hdmi_syslink_notifier_call(IPC_STOP)******* \n");
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 
 		if (*proc_id == multiproc_get_id("SysM3")) {
 			status = notify_unregister_event(SYS_M3, 0,
@@ -1495,33 +1562,44 @@ int hdmi_syslink_notifier_call(unsigned long val, void *v)
 		return status;
 	case IPC_CLOSE:
 	default:
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
 		printk("\n*******hdmi_syslink_notifier_call(IPC_CLOSE)******* \n");
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 		
 		return status;
 	}
 }
+
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
+#if 0
+static struct notifier_block hdmi_syslink_notify_block = {
+	.notifier_call = hdmi_syslink_notifier_call,
+};
+#else
+#endif
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 #endif //CONFIG_OMAP_HDMI_AUDIO_WA
 
 static void hdmi_w1_audio_enable(void)
 {
 	REG_FLD_MOD(HDMI_WP, HDMI_WP_AUDIO_CTRL, 1, 31, 31);
-	
+	/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI wake lock 2011-4-09*/
 	mutex_lock(&hdmi_mutex);
 	hdmi.audio_enable = true;
 	mutex_unlock(&hdmi_mutex);
-	
+	/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */
 }
 
 static void hdmi_w1_audio_disable(void)
 {
 	REG_FLD_MOD(HDMI_WP, HDMI_WP_AUDIO_CTRL, 0, 31, 31);
-	
+	/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI audio stop wait 2011-4-09*/
 	printk(KERN_INFO "HDMI Audio Transfer stop\n");
 	mutex_lock(&hdmi_mutex);
 	hdmi.audio_enable = false;
 	wake_up(&hdmi.audio_disable_wq);
 	mutex_unlock(&hdmi_mutex);
-	
+	/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */
 
 }
 
@@ -1612,6 +1690,14 @@ int hdmi_lib_enable(struct hdmi_config *cfg)
 
 	hdmi_w1_video_config_interface(&VideoInterfaceParam);
 
+#if 0
+	/* hnagalla */
+	val = hdmi_read_reg(HDMI_WP, HDMI_WP_VIDEO_SIZE);
+
+	val &= 0x0FFFFFFF;
+	val |= ((0x1f) << 27); /* wakeup */
+	hdmi_write_reg(HDMI_WP, HDMI_WP_VIDEO_SIZE, val);
+#endif
 	hdmi_w1_audio_config_format(HDMI_WP, &hdmi.audio_fmt);
 	hdmi_w1_audio_config_dma(HDMI_WP, &hdmi.audio_dma);
 
@@ -1733,11 +1819,23 @@ int hdmi_lib_enable(struct hdmi_config *cfg)
 	REG_FLD_MOD(av_name, HDMI_CORE_AV__HDMI_CTRL, cfg->hdmi_dvi, 0, 0);
 
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
+#if 0
+	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
+		if (hdmi.notify_event_reg == HDMI_NOTIFY_EVENT_NOTREG) {
+			r = ipc_register_notifier(&hdmi_syslink_notify_block);
+			hdmi.notify_event_reg = HDMI_NOTIFY_WAIT_FOR_IPC;
+		}
+	}
+#else
 	u16 procId;
 	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
 		procId = multiproc_get_id("SysM3");
 		hdmi_syslink_notifier_call(IPC_START, (void *)&procId);
 	}
+#endif
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
+
 #endif //CONFIG_OMAP_HDMI_AUDIO_WA
 	return r;
 }
@@ -1773,26 +1871,41 @@ int hdmi_lib_init(void)
 	hdmi.base_core_av = hdmi.base_wp + 0x900;
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
 	hdmi.notify_event_reg = HDMI_NOTIFY_EVENT_NOTREG;
+// LGE_UPDATE_S 2011-08-12 for ES2.3
 	hdmi.audio_wa_chip_ids.oc = CHIP_IS_OMAP4430ES2 |
-			CHIP_IS_OMAP4430ES2_1 | CHIP_IS_OMAP4430ES2_2;
+			CHIP_IS_OMAP4430ES2_1 | CHIP_IS_OMAP4430ES2_2 | CHIP_IS_OMAP4430ES2_3;
+// LGE_UPDATE_E 2011-08-12 for ES2.3
+/* LGE_CHANGE [sanggu.han@lge.com] 2011-10-05 CX2 Base Version making*/
+///# LGE_CHANGE_S
+#if defined (CONFIG_MACH_LGE_CX2)
+	hdmi.audio_wa_started = false;
+#endif
+///# LGE_CHANGE_E
 #endif
 
 	INIT_LIST_HEAD(&hdmi.notifier_head);
 
-	
+	/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI Audio Stop wait 2011-4-09*/
 	hdmi.audio_enable = false;
 	init_waitqueue_head(&hdmi.audio_disable_wq);
 	hdmi.device_connected = false;
-	
+	/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */
 	return 0;
 }
 
 void hdmi_lib_exit(void){
 	iounmap(hdmi.base_wp);
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+// TI_UPDATE_S sang-il.lee 2011-05-18 for HDMI ACR workaround
+#if 0
+	if (omap_chip_is(hdmi.audio_wa_chip_ids))
+		ipc_unregister_notifier(&hdmi_syslink_notify_block);
+#else
 	u16 procId;
 	procId = multiproc_get_id("SysM3");
 	hdmi_syslink_notifier_call(IPC_STOP, (void *)&procId);
+#endif		
+// TI_UPDATE_E sang-il.lee 2011-05-18 for HDMI ACR workaround
 #endif //CONFIG_OMAP_HDMI_AUDIO_WA
 }
 
@@ -1946,13 +2059,13 @@ int hdmi_rxdet(void)
 	hdmi_write_reg(HDMI_WP, HDMI_WP_WP_DEBUG_CFG, 0);
 
 	if (loop == 100)
-		
+		/* LGE_CHANGE [wonki.choi@lge.com] bug??? 2011-4-09 */
 		//state = -1;
 		state = 0;
 	else
 		state = (val1 & 1);
 
-
+/* LGE_CHANGE [wonki.choi@lge.com] DSS not sleep 2011-6-28 */
 #if !defined(CONFIG_MACH_LGE_COSMOPOLITAN)
 	/* Turn on the wakeup capability of the interrupts
 	It is recommended to turn on opposite interrupt wake
@@ -1973,7 +2086,7 @@ int hdmi_rxdet(void)
 		hdmi_w1_irq_wakeup_enable(&IrqHdmiVectorEnable);
 	}
 #endif
-
+/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-6-28 */
 
 	return state;
 }
@@ -2172,7 +2285,7 @@ int hdmi_configure_audio_sample_size(u32 sample_size)
 		REG_FLD_MOD(HDMI_WP, HDMI_WP_AUDIO_CTRL, 1, 31, 31);
 	return 0;
 }
-
+/* LGE_CHANGE_S [wonki.choi@lge.com] HDMI rework 2011-4-09*/
 
 //-------------------------------------------------------------------------
 //	IRQ related functions
@@ -2318,12 +2431,25 @@ int HDMI_S3D_VSI_set(struct hdmi_s3d_config *config)
 int HDMI_S3D_VSI_unset(void)
 {
 	u32 val;
+//	int r;
+//	struct hdmi_s3d_config config;
+	//Stop
 	val = hdmi_read_reg(HDMI_CORE_AV, HDMI_CORE_AV_PB_CTRL2);
 	val &= ~((u32)0x03);		//generic packet repeat/transmission disable
 	hdmi_write_reg(HDMI_CORE_AV, HDMI_CORE_AV_PB_CTRL2, val);
 
+//	config.structure = 0;
+//	config.s3d_ext_data = 0;
+//	r = hdmi_core_vsi_infoframe_ex(HDMI_CORE_AV, config);
+//	if ( r )
+//		return r;
+//	//enable generic packet transmission and repeat
+//	val = hdmi_read_reg(HDMI_CORE_AV, HDMI_CORE_AV_PB_CTRL2);
+//	val |= 0x01;		//generic packet repeat enable
+//	val |= 0x02;		//generic packet transmission enable
+//	hdmi_write_reg(HDMI_CORE_AV, HDMI_CORE_AV_PB_CTRL2, val);
 	return 0;
 }
 
 
-
+/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-09 */

@@ -97,6 +97,10 @@ static unsigned char gkpd_value[21];
 static struct wake_lock key_wake_lock;
 #endif
 
+#if defined (CONFIG_MACH_LGE_CX2) 
+struct omap_kp *omap_mhl_kp = NULL;
+#endif
+
 
 struct omap_kp {
 	struct input_dev *input;
@@ -224,7 +228,16 @@ static DEVICE_ATTR(key_test_mode, 0664, keypad_test_mode_show, keypad_test_mode_
 
 
 #endif
+int saved_key = 0;
 
+ssize_t get_saved_key(struct device *dev, struct device_attribute *attr, char *buf)
+{       
+	sprintf(buf, "%d\n", saved_key);
+	return (ssize_t)(strlen(buf)+1);
+}
+DEVICE_ATTR(key_saving, 0664, get_saved_key, NULL);
+
+struct input_dev *omap4430_keypad = NULL;
 
 #ifdef CONFIG_ARCH_OMAP2
 static void set_col_gpio_val(struct omap_kp *omap_kp, u8 value)
@@ -385,18 +398,25 @@ static void omap_kp_tasklet(unsigned long data)
 				continue;
 
 			kp_cur_group = key & GROUP_MASK;
-			input_report_key(omap_kp_data->input,
-				key & ~GROUP_MASK, new_state[col]
-					 & (1 << row));
-			input_sync(omap_kp_data->input);
-			#ifdef FACTORY_AT_COMMAND_GKPD
 			
+			if((key & ~GROUP_MASK) != KEY_HOME)
+			{
+				input_report_key(omap_kp_data->input,
+					key & ~GROUP_MASK, (bool) (new_state[col]	
+						 & (1 << row)));
+				input_sync(omap_kp_data->input);
+			}			
+			
+			if((key & ~GROUP_MASK) == KEY_VOLUMEUP) {
+				saved_key = !!(new_state[col] & (1 << row));
+			}
+#ifdef FACTORY_AT_COMMAND_GKPD
 			if(test_mode == 1 && ((new_state[col] & (1 << row)) == 0))
 			{
 				test_code = key & ~GROUP_MASK;
 				write_gkpd_value(test_code);
 			}			
-			#endif
+#endif
 #endif
 		}
 	}
@@ -431,6 +451,65 @@ static void omap_kp_tasklet(unsigned long data)
 	omap_writel(omap_readl(OMAP4_KBDOCP_BASE + OMAP4_KBD_IRQSTATUS),
 				OMAP4_KBDOCP_BASE + OMAP4_KBD_IRQSTATUS);
 }
+
+#if defined (CONFIG_MACH_LGE_CX2) 
+void hdmi_common_send_keyevent(u8 code)
+{
+	int key = 0;
+	if (omap_mhl_kp == NULL)
+	{
+		printk("error omap_mhl_kp is null!!! (MHL RCP)\n");
+		return;
+	}
+
+	switch (code)
+	{
+		case 0x30:
+			key = KEY_UP; 
+			break;
+		case 0x31:
+			key = KEY_DOWN; 
+			break;
+		//case 0x60:
+		case 0x44:
+			key = KEY_PLAYCD; 
+			break;
+		//case 0x61:
+		case 0x45:
+			key = KEY_STOPCD; 
+			break;
+		//case 0x64:
+		case 0x46 :
+			key = KEY_PAUSECD; 
+			break;
+		case 0x48:
+			key = KEY_REWIND; 
+			break;
+		case 0x49:
+			key = KEY_FASTFORWARD; 
+			break;
+
+		//test
+		case 0x1:
+			key = KEY_VOLUMEUP; 
+			break;
+		case 0x2:
+			key = KEY_VOLUMEDOWN; 
+			break;
+		default :
+			key = KEY_RESERVED;
+			printk("error!! currently scenario is nothing!!! (MHL RCP) code = %d\n", code); 		
+	}
+
+	input_report_key(omap_mhl_kp->input, key, 1);
+	input_sync(omap_mhl_kp->input);
+	input_report_key(omap_mhl_kp->input, key, 0);
+	input_sync(omap_mhl_kp->input);
+	printk("sending MHL RCP  key value (%d)\n", key);
+	return;
+}
+EXPORT_SYMBOL(hdmi_common_send_keyevent);
+#endif
 
 static ssize_t omap_kp_enable_show(struct device *dev,
 				   struct device_attribute *attr, char *buf)
@@ -654,6 +733,10 @@ static int __devinit omap_kp_probe(struct platform_device *pdev)
 				OMAP4_KBD_IRQENABLE_LONGKEY ,
 				OMAP4_KBDOCP_BASE + OMAP4_KBD_IRQENABLE);
 	}
+	if(device_create_file(&pdev->dev, &dev_attr_key_saving)){
+		printk(KERN_ERR "[omap_kp:] Failed create sys file, key_saving");
+		goto err5;
+	}
 	return 0;
 err5:
 	for (i = irq_idx - 1; i >=0; i--)
@@ -719,7 +802,7 @@ static int __devexit omap_kp_remove(struct platform_device *pdev)
 	device_remove_file(&pdev->dev, &dev_attr_key_test_mode);
 	wake_lock_destroy(&key_wake_lock);
 #endif
-
+	device_remove_file(&pdev->dev,  &dev_attr_key_saving);
 	kfree(omap_kp);
 
 	return 0;

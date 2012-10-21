@@ -39,7 +39,6 @@
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
-//#undef CONFIG_HAS_EARLYSUSPEND
 #endif
 
 #include <linux/errno.h>
@@ -50,16 +49,16 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 
+#include <linux/device.h>  // add alex , 1106021
+
 #include "mpuirq.h"
 #include "slaveirq.h"
 #include "mlsl.h"
 #include "mpu-i2c.h"
 #include "mldl_cfg.h"
-#include "mpu.h"
+#include "mpu-accel.h"
 
-#include <asm/atomic.h>
-static atomic_t cal_flag;
-static atomic_t cal_result;
+#include "mpu.h"
 
 #define MPU3050_EARLY_SUSPEND_IN_DRIVER 0
 
@@ -73,42 +72,29 @@ struct mpu_private_data {
 };
 
 static int pid;
-
 static struct i2c_client *this_client;
 
-static ssize_t motion_cal_onoff_show(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+/*
+//start ,  added alex 110621
+static int cal_flag = 0;
+static ssize_t mpu_cal_onoff_show(struct device *dev,
+                             struct device_attribute *attr, char *sysfsbuf)
 {
-	u32    val;
-	val = atomic_read(&cal_result);
- 
-	return sprintf(buf, "%d\n",val);
+    int temp=cal_flag;
+    cal_flag = 0;
+    return sprintf(sysfsbuf, "%d\n",temp);
 }
-
-static ssize_t motion_cal_onoff_store(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+static ssize_t mpu_cal_onoff_store(struct device *dev,
+             struct device_attribute *attr, const char *buf, size_t count)
 {
-	u32    val;
-	val = simple_strtoul(buf, NULL, 10);
-
-	if (val) {
-		atomic_set(&cal_flag, 1);
-	} else {
-		atomic_set(&cal_flag, 0);
-	}
-
-	return count;
+    unsigned long rdata = simple_strtoul(buf, NULL, 10);
+    cal_flag = (int)rdata;
+    return count;
 }
-
-static DEVICE_ATTR(cal_onoff, 0664, motion_cal_onoff_show, motion_cal_onoff_store);
-
-static struct attribute *cosmo_motion_attributes[] = {
-	&dev_attr_cal_onoff.attr,
-	NULL
-};
-static const struct attribute_group cosmo_motion_group = {
-	.attrs = cosmo_motion_attributes,
-};
-
-
+//Sensor Calibration
+DEVICE_ATTR(cal_onoff, 0666, mpu_cal_onoff_show, mpu_cal_onoff_store);
+//end ,  added alex 110621
+*/
 static int mpu_open(struct inode *inode, struct file *file)
 {
 	struct mpu_private_data *mpu =
@@ -268,8 +254,11 @@ static ssize_t mpu_read(struct file *file,
 
 /* @todo fix this to do a i2c trasnfer from the FIFO */
 	ret = i2c_master_recv(client, tmp, count);
-	if (ret >= 0)
+	if (ret >= 0) {
 		ret = copy_to_user(buf, tmp, count) ? -EFAULT : ret;
+		if (ret)
+			ret = -EFAULT;
+	}
 	kfree(tmp);
 	return ret;
 }
@@ -416,48 +405,184 @@ mpu_ioctl_get_mpu_config(struct i2c_client *client, unsigned long arg)
 	retval =
 	    copy_from_user(local_mldl_cfg, (struct mldl_cfg __user *) arg,
 			   sizeof(struct mldl_cfg));
-	if (retval)
+	if (retval) {
+		dev_err(&this_client->adapter->dev,
+			"%s|%s:%d: EFAULT on arg\n",
+			__FILE__, __func__, __LINE__);
+		retval = -EFAULT;
 		goto out;
+	}
 
 	/* Fill in the accel, compass, pressure and pdata pointers */
 	if (mldl_cfg->accel) {
 		retval = copy_to_user((void __user *)local_mldl_cfg->accel,
 				      mldl_cfg->accel,
 				      sizeof(*mldl_cfg->accel));
-		if (retval)
+		if (retval) {
+			dev_err(&this_client->adapter->dev,
+				"%s|%s:%d: EFAULT on accel\n",
+				__FILE__, __func__, __LINE__);
+			retval = -EFAULT;
 			goto out;
+		}
 	}
 
 	if (mldl_cfg->compass) {
 		retval = copy_to_user((void __user *)local_mldl_cfg->compass,
 				      mldl_cfg->compass,
 				      sizeof(*mldl_cfg->compass));
-		if (retval)
+		if (retval) {
+			dev_err(&this_client->adapter->dev,
+				"%s|%s:%d: EFAULT on compass\n",
+				__FILE__, __func__, __LINE__);
+			retval = -EFAULT;
 			goto out;
+		}
 	}
 
 	if (mldl_cfg->pressure) {
-		retval = copy_to_user(local_mldl_cfg->pressure,
+		retval = copy_to_user((void __user *)local_mldl_cfg->pressure,
 				      mldl_cfg->pressure,
 				      sizeof(*mldl_cfg->pressure));
-		if (retval)
+		if (retval) {
+			dev_err(&this_client->adapter->dev,
+				"%s|%s:%d: EFAULT on pressure\n",
+				__FILE__, __func__, __LINE__);
+			retval = -EFAULT;
 			goto out;
+		}
 	}
 
 	if (mldl_cfg->pdata) {
 		retval = copy_to_user((void __user *)local_mldl_cfg->pdata,
 				      mldl_cfg->pdata,
 				      sizeof(*mldl_cfg->pdata));
-		if (retval)
+		if (retval) {
+			dev_err(&this_client->adapter->dev,
+				"%s|%s:%d: EFAULT on pdata\n",
+				__FILE__, __func__, __LINE__);
+			retval = -EFAULT;
 			goto out;
+		}
 	}
 
 	/* Do not modify the accel, compass, pressure and pdata pointers */
 	retval = copy_to_user((struct mldl_cfg __user *) arg,
 			      mldl_cfg, offsetof(struct mldl_cfg, accel));
 
+	if (retval)
+		retval = -EFAULT;
 out:
 	kfree(local_mldl_cfg);
+	return retval;
+}
+
+/**
+ * Pass a requested slave configuration to the slave sensor
+ *
+ * @param adapter the adaptor to use to communicate with the slave
+ * @param mldl_cfg the mldl configuration structuer
+ * @param slave pointer to the slave descriptor
+ * @param usr_config The configuration to pass to the slave sensor
+ *
+ * @return 0 or non-zero error code
+ */
+static int slave_config(void *adapter,
+			struct mldl_cfg *mldl_cfg,
+			struct ext_slave_descr *slave,
+			struct ext_slave_config __user *usr_config)
+{
+	int retval = ML_SUCCESS;
+	if ((slave) && (slave->config)) {
+		struct ext_slave_config config;
+		retval = copy_from_user(
+			&config,
+			usr_config,
+			sizeof(config));
+		if (retval)
+			return -EFAULT;
+
+		if (config.len && config.data) {
+			int *data;
+			data = kzalloc(config.len, GFP_KERNEL);
+			if (!data)
+				return ML_ERROR_MEMORY_EXAUSTED;
+
+			retval = copy_from_user(data,
+						(void __user *)config.data,
+						config.len);
+			if (retval) {
+				retval = -EFAULT;
+				kfree(data);
+				return retval;
+			}
+			config.data = data;
+		}
+		retval = slave->config(adapter,
+				slave,
+				&mldl_cfg->pdata->accel,
+				&config);
+		kfree(config.data);
+	}
+	return retval;
+}
+
+/**
+ * Get a requested slave configuration from the slave sensor
+ *
+ * @param adapter the adaptor to use to communicate with the slave
+ * @param mldl_cfg the mldl configuration structuer
+ * @param slave pointer to the slave descriptor
+ * @param usr_config The configuration for the slave to fill out
+ *
+ * @return 0 or non-zero error code
+ */
+static int slave_get_config(void *adapter,
+			struct mldl_cfg *mldl_cfg,
+			struct ext_slave_descr *slave,
+			struct ext_slave_config __user *usr_config)
+{
+	int retval = ML_SUCCESS;
+	if ((slave) && (slave->get_config)) {
+		struct ext_slave_config config;
+		void *user_data;
+		retval = copy_from_user(
+			&config,
+			usr_config,
+			sizeof(config));
+		if (retval)
+			return -EFAULT;
+
+		user_data = config.data;
+		if (config.len && config.data) {
+			int *data;
+			data = kzalloc(config.len, GFP_KERNEL);
+			if (!data)
+				return ML_ERROR_MEMORY_EXAUSTED;
+
+			retval = copy_from_user(data,
+						(void __user *)config.data,
+						config.len);
+			if (retval) {
+				retval = -EFAULT;
+				kfree(data);
+				return retval;
+			}
+			config.data = data;
+		}
+		retval = slave->get_config(adapter,
+				slave,
+				&mldl_cfg->pdata->accel,
+				&config);
+		if (retval) {
+			kfree(config.data);
+			return retval;
+		}
+		retval = copy_to_user((unsigned char __user *) user_data,
+				      config.data,
+				      config.len);
+		kfree(config.data);
+	}
 	return retval;
 }
 
@@ -473,12 +598,8 @@ static long mpu_ioctl(struct file *file,
 	int retval = 0;
 	struct i2c_adapter *accel_adapter;
 	struct i2c_adapter *compass_adapter;
-
 	struct i2c_adapter *pressure_adapter;
-	
-	/* eugene.goh */int buf[13] = {0,};
-	/* eugene.goh */void __user *argp = (void __user *)arg;
-	
+
 	accel_adapter = i2c_get_adapter(mldl_cfg->pdata->accel.adapt_num);
 	compass_adapter =
 	    i2c_get_adapter(mldl_cfg->pdata->compass.adapt_num);
@@ -536,11 +657,16 @@ static long mpu_ioctl(struct file *file,
 		retval = copy_from_user(mldl_cfg->offset_tc,
 					(unsigned char __user *) arg,
 					sizeof(mldl_cfg->offset_tc));
+		if (retval)
+			retval = -EFAULT;
+
 		break;
 	case MPU_SET_RAM:
 		retval = copy_from_user(mldl_cfg->ram,
 					(unsigned char __user *) arg,
 					sizeof(mldl_cfg->ram));
+		if (retval)
+			retval = -EFAULT;
 		break;
 	case MPU_SET_PLATFORM_DATA:
 		retval = mpu_ioctl_set_mpu_pdata(client, arg);
@@ -596,122 +722,46 @@ static long mpu_ioctl(struct file *file,
 		retval = copy_to_user((unsigned char __user *) arg,
 				      mldl_cfg->offset_tc,
 				      sizeof(mldl_cfg->offset_tc));
+		if (retval)
+			retval = -EFAULT;
 		break;
 	case MPU_GET_RAM:
 		retval = copy_to_user((unsigned char __user *) arg,
 				      mldl_cfg->ram,
 				      sizeof(mldl_cfg->ram));
+		if (retval)
+			retval = -EFAULT;
 		break;
 	case MPU_CONFIG_ACCEL:
-	{
-		if ((mldl_cfg->accel) && (mldl_cfg->accel->config)) {
-			struct ext_slave_config config;
-			retval = copy_from_user(
-				&config,
-				(struct ext_slave_config *)arg,
-				sizeof(config));
-			if (retval)
-				break;
-
-			if (config.len && config.data) {
-				int *data;
-				data = kzalloc(config.len, GFP_KERNEL);
-				if (!data) {
-					retval = ML_ERROR_MEMORY_EXAUSTED;
-					break;
-				}
-				retval = copy_from_user(data,
-							(void *)config.data,
-							config.len);
-				if (retval) {
-					kfree(data);
-					break;
-				}
-				config.data = data;
-			}
-			retval = mldl_cfg->accel->config(
-				accel_adapter,
+		retval = slave_config(accel_adapter, mldl_cfg,
 				mldl_cfg->accel,
-				&mldl_cfg->pdata->accel,
-				&config);
-			kfree(config.data);
-		}
+				(struct ext_slave_config __user *) arg);
 		break;
-	}
 	case MPU_CONFIG_COMPASS:
-	{
-		if ((mldl_cfg->compass) && (mldl_cfg->compass->config)) {
-			struct ext_slave_config config;
-			retval = copy_from_user(
-				&config,
-				(struct ext_slave_config *)arg,
-				sizeof(config));
-			if (retval)
-				break;
-
-			if (config.len && config.data) {
-				int *data;
-				data = kzalloc(config.len, GFP_KERNEL);
-				if (!data) {
-					retval = ML_ERROR_MEMORY_EXAUSTED;
-					break;
-				}
-				retval = copy_from_user(data,
-							(void *)config.data,
-							config.len);
-				if (retval) {
-					kfree(data);
-					break;
-				}
-				config.data = data;
-			}
-			retval = mldl_cfg->compass->config(
-				compass_adapter,
+		retval = slave_config(compass_adapter, mldl_cfg,
 				mldl_cfg->compass,
-				&mldl_cfg->pdata->compass,
-				&config);
-			kfree(config.data);
-		}
+				(struct ext_slave_config __user *) arg);
 		break;
-	}
 	case MPU_CONFIG_PRESSURE:
-	{
-		if ((mldl_cfg->pressure) && (mldl_cfg->pressure->config)) {
-			struct ext_slave_config config;
-			retval = copy_from_user(
-				&config,
-				(struct ext_slave_config *)arg,
-				sizeof(config));
-			if (retval)
-				break;
-
-			if (config.len && config.data) {
-				int *data;
-				data = kzalloc(config.len, GFP_KERNEL);
-				if (!data) {
-					retval = ML_ERROR_MEMORY_EXAUSTED;
-					break;
-				}
-				retval = copy_from_user(data,
-							(void *)config.data,
-							config.len);
-				if (retval) {
-					kfree(data);
-					break;
-				}
-				config.data = data;
-			}
-			retval = mldl_cfg->pressure->config(
-				pressure_adapter,
+		retval = slave_config(pressure_adapter, mldl_cfg,
 				mldl_cfg->pressure,
-				&mldl_cfg->pdata->pressure,
-				&config);
-			kfree(config.data);
-		}
+				(struct ext_slave_config __user *) arg);
 		break;
-	}
-	case MPU_READ_MEMORY:
-	case MPU_WRITE_MEMORY:
+	case MPU_GET_CONFIG_ACCEL:
+		retval = slave_get_config(accel_adapter, mldl_cfg,
+					mldl_cfg->accel,
+					(struct ext_slave_config __user *) arg);
+		break;
+	case MPU_GET_CONFIG_COMPASS:
+		retval = slave_get_config(compass_adapter, mldl_cfg,
+					mldl_cfg->compass,
+					(struct ext_slave_config __user *) arg);
+		break;
+	case MPU_GET_CONFIG_PRESSURE:
+		retval = slave_get_config(pressure_adapter, mldl_cfg,
+					mldl_cfg->pressure,
+					(struct ext_slave_config __user *) arg);
+		break;
 	case MPU_SUSPEND:
 	{
 		unsigned long sensors;
@@ -729,7 +779,6 @@ static long mpu_ioctl(struct file *file,
 						== ML_THREE_AXIS_COMPASS),
 					((sensors & ML_THREE_AXIS_PRESSURE)
 						== ML_THREE_AXIS_PRESSURE));
-//		printk("[%s][%x] - MPU_SUSPEND\n", __func__, cmd);
 	}
 	break;
 	case MPU_RESUME:
@@ -745,77 +794,50 @@ static long mpu_ioctl(struct file *file,
 					sensors & ML_THREE_AXIS_ACCEL,
 					sensors & ML_THREE_AXIS_COMPASS,
 					sensors & ML_THREE_AXIS_PRESSURE);
-//		printk("[%s][%x] - MPU_RESUME\n", __func__, cmd);
 	}
 	break;
 	case MPU_READ_ACCEL:
-		{
-			unsigned char data[6];
-			retval =
-			    mpu3050_read_accel(mldl_cfg, client->adapter,
-					       data);
-			if (ML_SUCCESS == retval)
-				retval =
-				    copy_to_user((unsigned char __user *) arg,
-						 data, sizeof(data));
-		}
-		break;
+	{
+		unsigned char data[6];
+		retval = mpu3050_read_accel(mldl_cfg, client->adapter,
+					    data);
+		if ((ML_SUCCESS == retval) &&
+		    (copy_to_user((unsigned char __user *) arg,
+			    data, sizeof(data))))
+			retval = -EFAULT;
+	}
+	break;
 	case MPU_READ_COMPASS:
-		{
-			unsigned char data[6];
-			struct i2c_adapter *compass_adapt =
-			    i2c_get_adapter(mldl_cfg->pdata->compass.
-					    adapt_num);
-			retval =
-			    mpu3050_read_compass(mldl_cfg, compass_adapt,
+	{
+		unsigned char data[6];
+		struct i2c_adapter *compass_adapt =
+			i2c_get_adapter(mldl_cfg->pdata->compass.
+					adapt_num);
+		retval = mpu3050_read_compass(mldl_cfg, compass_adapt,
 						 data);
-			if (ML_SUCCESS == retval)
-				retval =
-				    copy_to_user((unsigned char *) arg,
-						 data, sizeof(data));
-		}
-		break;
+		if ((ML_SUCCESS == retval) &&
+			(copy_to_user((unsigned char *) arg,
+				data, sizeof(data))))
+			retval = -EFAULT;
+	}
+	break;
 	case MPU_READ_PRESSURE:
-		{
-			unsigned char data[3];
-			struct i2c_adapter *pressure_adapt =
-			    i2c_get_adapter(mldl_cfg->pdata->pressure.
-					    adapt_num);
-			retval =
-			    mpu3050_read_pressure(mldl_cfg, pressure_adapt,
-						 data);
-			if (ML_SUCCESS == retval)
-				retval =
-				    copy_to_user((unsigned char __user *) arg,
-						 data, sizeof(data));
-		}
-		break;
-	case MPU_SET_CALIBRATION_FINISHED :
-		if (copy_from_user(&buf, argp, sizeof(buf))) {
-				return -EFAULT;
-			}
-
-			atomic_set(&cal_flag, buf[0]);
-			atomic_set(&cal_result, buf[1]);
-//			printk("eugene : MPU_SET_CALIBRATION_FINISHED RESULT = %d\n", atomic_read(&cal_result));
-			break;
-	case MPU_GET_CALIBRATION_STATUS :
-			{
-				int flag = atomic_read(&cal_flag);
-
-				if(flag == 1)
-				{
-					atomic_set(&cal_result, 2);
-				}
-
-//				printk("eugene : MPU_GET_CALIBRATION_STATUS RESULT = %d\n", flag);
-
-				if (copy_to_user(argp,&flag, sizeof(flag)))
-				{
-					   return -EFAULT;
-				}
-			}
-			break;
+	{
+		unsigned char data[3];
+		struct i2c_adapter *pressure_adapt =
+			i2c_get_adapter(mldl_cfg->pdata->pressure.
+					adapt_num);
+		retval =
+			mpu3050_read_pressure(mldl_cfg, pressure_adapt,
+					data);
+		if ((ML_SUCCESS == retval) &&
+		    (copy_to_user((unsigned char __user *) arg,
+			    data, sizeof(data))))
+			retval = -EFAULT;
+	}
+	break;
+	case MPU_READ_MEMORY:
+	case MPU_WRITE_MEMORY:
 	default:
 		dev_err(&this_client->adapter->dev,
 			"%s: Unknown cmd %d, arg %lu\n", __func__, cmd,
@@ -926,7 +948,7 @@ int mpu_suspend(struct i2c_client *client, pm_message_t mesg)
 	    i2c_get_adapter(mldl_cfg->pdata->pressure.adapt_num);
 
 	if (!mpu->mldl_cfg.gyro_is_suspended) {
-		dev_info(&this_client->adapter->dev,
+		dev_dbg(&this_client->adapter->dev,
 			"%s: suspending on event %d\n", __func__,
 			mesg.event);
 		(void) mpu3050_suspend(mldl_cfg, this_client->adapter,
@@ -934,7 +956,7 @@ int mpu_suspend(struct i2c_client *client, pm_message_t mesg)
 				       pressure_adapter,
 				       TRUE, TRUE, TRUE, TRUE);
 	} else {
-		dev_info(&this_client->adapter->dev,
+		dev_dbg(&this_client->adapter->dev,
 			"%s: Already suspended %d\n", __func__,
 			mesg.event);
 	}
@@ -966,7 +988,7 @@ int mpu_resume(struct i2c_client *client)
 				      sensors & ML_THREE_AXIS_ACCEL,
 				      sensors & ML_THREE_AXIS_COMPASS,
 				      sensors & ML_THREE_AXIS_PRESSURE);
-		dev_info(&this_client->adapter->dev,
+		dev_dbg(&this_client->adapter->dev,
 			"%s for pid %d\n", __func__, pid);
 	}
 	return 0;
@@ -1012,6 +1034,8 @@ int mpu3050_probe(struct i2c_client *client,
 
 	dev_dbg(&client->adapter->dev, "%s\n", __func__);
 
+    //sysfs_create_file(&client->dev.kobj, &dev_attr_cal_onoff.attr); //added alex ,110621
+
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		res = -ENODEV;
 		goto out_check_functionality_failed;
@@ -1033,8 +1057,8 @@ int mpu3050_probe(struct i2c_client *client,
 	} else {
 		mldl_cfg->pdata = pdata;
 
-#if defined(CONFIG_SENSORS_MPU3050_MODULE) || \
-    defined(CONFIG_SENSORS_MPU6000_MODULE)
+#if defined(CONFIG_MPU_SENSORS_MPU3050_MODULE) || \
+    defined(CONFIG_MPU_SENSORS_MPU6000_MODULE)
 		pdata->accel.get_slave_descr = get_accel_slave_descr;
 		pdata->compass.get_slave_descr = get_compass_slave_descr;
 		pdata->pressure.get_slave_descr = get_pressure_slave_descr;
@@ -1148,7 +1172,11 @@ int mpu3050_probe(struct i2c_client *client,
 		dev_warn(&this_client->adapter->dev,
 			 "WARNING: %s irq not assigned\n", MPU_NAME);
 	}
-	
+
+
+
+
+	mpu_accel_init(&mpu->mldl_cfg,client->adapter); 
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	mpu->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
@@ -1156,18 +1184,6 @@ int mpu3050_probe(struct i2c_client *client,
 	mpu->early_suspend.resume = mpu3050_early_resume;
 	register_early_suspend(&mpu->early_suspend);
 #endif
-	
-	atomic_set(&cal_result, 2); //0: pass 1:fail 2:initial state
-
-	//printk(KERN_ERR "eugene : start sysfs_create_group()\n");
-	if ((res = sysfs_create_group(&this_client->dev.kobj, &cosmo_motion_group))) {
-		dev_err(&this_client->adapter->dev,
-					"ERROR: /dev/mpu sysfs_create_group FAIL \n", res);
-		goto err_sysfs_create;
-	}
-	//printk(KERN_ERR "eugene : end sysfs_create_group() : result = %d\n",res);	
-
-
 	return res;
 
 out_mpuirq_failed:
@@ -1196,9 +1212,6 @@ out_alloc_data_failed:
 out_check_functionality_failed:
 	dev_err(&this_client->adapter->dev, "%s failed %d\n", __func__,
 		res);
-err_sysfs_create:
-	//printk("##  sensor: cosmo motion misc_device_register_failed\n");
-
 	return res;
 
 }
@@ -1247,6 +1260,8 @@ static int mpu3050_remove(struct i2c_client *client)
 	misc_deregister(&i2c_mpu_device);
 	kfree(mpu);
 
+    mpu_accel_exit(mldl_cfg);
+
 	return 0;
 }
 
@@ -1282,7 +1297,7 @@ static int __init mpu_init(void)
 {
 	int res = i2c_add_driver(&mpu3050_driver);
 	pid = 0;
-	//printk(KERN_DEBUG "%s\n", __func__);
+	printk(KERN_DEBUG "%s\n", __func__);
 	if (res)
 		dev_err(&this_client->adapter->dev, "%s failed\n",
 			__func__);
@@ -1291,7 +1306,7 @@ static int __init mpu_init(void)
 
 static void __exit mpu_exit(void)
 {
-	//printk(KERN_DEBUG "%s\n", __func__);
+	printk(KERN_DEBUG "%s\n", __func__);
 	i2c_del_driver(&mpu3050_driver);
 }
 

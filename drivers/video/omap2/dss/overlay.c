@@ -38,18 +38,15 @@
 
 #define MAX_DSS_OVERLAYS (cpu_is_omap44xx() ? 4 : 3)
 
-
 #define REQ_OVERLAY
 static int num_overlays;
 static struct list_head overlay_list;
 static struct omap_overlay *dispc_overlays[4];
-
 #ifdef REQ_OVERLAY
 #define MAX_MANAGER_NAME_LEN 16
 
 struct omap_overlay_info omap_overlay_info_req[4];
 #endif
-
 
 static ssize_t overlay_name_show(struct omap_overlay *ovl, char *buf)
 {
@@ -96,10 +93,11 @@ static ssize_t overlay_manager_store(struct omap_overlay *ovl, const char *buf,
 
 	if (mgr && sysfs_streq(mgr->name, "tv")) {
 		ovl->get_overlay_info(ovl, &info);
-		
+		//OUT_WIDTH is correct
+//		if (mgr->device->panel.timings.x_res < info.width ||
+//			mgr->device->panel.timings.y_res < info.height) {
 		if (mgr->device->panel.timings.x_res < info.out_width ||
 			mgr->device->panel.timings.y_res < info.out_height) {
-		
 			printk(KERN_ERR"TV does not support downscaling"
 			"Please configure overlay to supported format");
 			return -EINVAL;
@@ -235,16 +233,102 @@ static ssize_t overlay_output_size_store(struct omap_overlay *ovl,
 
 	if (sysfs_streq(ovl->manager->name, "tv")) {
 		if (ovl->manager->device->panel.timings.x_res < out_width ||
-
+//		ovl->manager->device->panel.timings.y_res < out_height)
+//		printk(KERN_ERR"TV does not support downscaling , Wrong output size");
+//		return -EINVAL;
 		ovl->manager->device->panel.timings.y_res < out_height){
 			printk(KERN_ERR"TV does not support downscaling , Wrong output size");
 			return -EINVAL;
 		}
-
 	}
 
 	info.out_width = out_width;
 	info.out_height = out_height;
+
+	r = ovl->set_overlay_info(ovl, &info);
+	if (r)
+		return r;
+
+	if (ovl->manager) {
+		r = ovl->manager->apply(ovl->manager);
+		if (r)
+			return r;
+	}
+
+	return size;
+}
+
+
+static ssize_t overlay_portrait_position_show(struct omap_overlay *ovl, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d,%d\n",
+			ovl->info.portrait_pos_x, ovl->info.portrait_pos_y);
+}
+
+static ssize_t overlay_portrait_position_store(struct omap_overlay *ovl,
+		const char *buf, size_t size)
+{
+	int r;
+	char *last;
+	struct omap_overlay_info info;
+
+	ovl->get_overlay_info(ovl, &info);
+
+	info.portrait_pos_x = simple_strtoul(buf, &last, 10);
+	++last;
+	if (last - buf >= size)
+		return -EINVAL;
+
+	info.portrait_pos_y = simple_strtoul(last, &last, 10);
+
+	r = ovl->set_overlay_info(ovl, &info);
+	if (r)
+		return r;
+
+	if (ovl->manager) {
+		r = ovl->manager->apply(ovl->manager);
+		if (r)
+			return r;
+	}
+
+	return size;
+}
+
+static ssize_t overlay_portrait_output_size_show(struct omap_overlay *ovl, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d,%d\n",
+			ovl->info.portrait_out_width, ovl->info.portrait_out_height);
+}
+
+static ssize_t overlay_portrait_output_size_store(struct omap_overlay *ovl,
+		const char *buf, size_t size)
+{
+	int r, out_width, out_height;
+	char *last;
+	struct omap_overlay_info info;
+
+	ovl->get_overlay_info(ovl, &info);
+
+	out_width = simple_strtoul(buf, &last, 10);
+	++last;
+	if (last - buf >= size)
+		return -EINVAL;
+
+	out_height = simple_strtoul(last, &last, 10);
+
+	if (sysfs_streq(ovl->manager->name, "tv")) {
+		if (ovl->manager->device->panel.timings.x_res < out_width ||
+//		ovl->manager->device->panel.timings.y_res < out_height)
+//		printk(KERN_ERR"TV does not support downscaling , Wrong output size");
+//		return -EINVAL;
+		ovl->manager->device->panel.timings.y_res < out_height){
+			printk(KERN_ERR"TV does not support downscaling , Wrong output size");
+			return -EINVAL;
+		}
+	}
+
+	info.portrait_out_width = out_width;
+	info.portrait_out_height = out_height;
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -434,7 +518,6 @@ static ssize_t overlay_zorder_store(struct omap_overlay *ovl,
 	return size;
 }
 
-
 //show rotation
 static ssize_t overlay_rotation_show(struct omap_overlay *ovl, char *buf)
 {
@@ -551,6 +634,16 @@ static ssize_t overlay_req_out_size_store(struct omap_overlay *ovl,
 	if(out_width < 0 || out_height < 0)
 		return -EINVAL;
 	
+#if 0
+	if (sysfs_streq(ovl->manager->name, "tv")) {
+		if (ovl->manager->device->panel.timings.x_res < out_width ||
+			ovl->manager->device->panel.timings.y_res < out_height) {
+				printk(KERN_ERR "TV does not support downscaling , Wrong output size");
+				return -EINVAL;
+		}
+	}
+#endif	
+
 	omap_overlay_info_req[ovl->id].out_width = out_width;
 	omap_overlay_info_req[ovl->id].out_height = out_height;
 
@@ -718,7 +811,6 @@ err_manager:
 	return size;
 }
 #endif
-
 struct overlay_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct omap_overlay *, char *);
@@ -749,9 +841,12 @@ static OVERLAY_ATTR(y_decim, S_IRUGO|S_IWUSR,
 		overlay_y_decim_show, overlay_y_decim_store);
 static OVERLAY_ATTR(zorder, S_IRUGO|S_IWUSR,
 		overlay_zorder_show, overlay_zorder_store);
-
 static OVERLAY_ATTR(rotation, S_IRUGO, overlay_rotation_show, NULL);
 static OVERLAY_ATTR(mirror,	S_IRUGO, overlay_mirror_show, NULL);
+static OVERLAY_ATTR(portrait_position, S_IRUGO|S_IWUSR,
+		overlay_portrait_position_show, overlay_portrait_position_store);
+static OVERLAY_ATTR(portrait_output_size, S_IRUGO|S_IWUSR,
+		overlay_portrait_output_size_show, overlay_portrait_output_size_store);
 #ifdef REQ_OVERLAY
 static OVERLAY_ATTR(req_enabled, S_IRUGO|S_IWUSR,
 		overlay_req_enabled_show, overlay_req_enabled_store);
@@ -773,7 +868,6 @@ static OVERLAY_ATTR(req_request, S_IRUGO|S_IWUSR,
 		overlay_req_request_show, overlay_req_request_store);
 #endif
 
-
 static struct attribute *overlay_sysfs_attrs[] = {
 	&overlay_attr_name.attr,
 	&overlay_attr_manager.attr,
@@ -786,9 +880,10 @@ static struct attribute *overlay_sysfs_attrs[] = {
 	&overlay_attr_x_decim.attr,
 	&overlay_attr_y_decim.attr,
 	&overlay_attr_zorder.attr,
-
 	&overlay_attr_rotation.attr,
 	&overlay_attr_mirror.attr,
+	&overlay_attr_portrait_position.attr,
+	&overlay_attr_portrait_output_size.attr,
 #ifdef REQ_OVERLAY
 	&overlay_attr_req_enabled.attr,
 	&overlay_attr_req_rotation.attr,
@@ -800,7 +895,6 @@ static struct attribute *overlay_sysfs_attrs[] = {
 	&overlay_attr_req_manager.attr,
 	&overlay_attr_req_request.attr,
 #endif
-
 	NULL
 };
 
@@ -1216,9 +1310,7 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 		}
 	}
 
-
 	if(dssdev->type != OMAP_DISPLAY_TYPE_HDMI) {
-
 		if (mgr) {
 			for (i = 0; i < MAX_DSS_OVERLAYS; i++) {
 				struct omap_overlay *ovl;
@@ -1230,9 +1322,7 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 				}
 			}
 		}
-
 	}
-
 }
 
 void dss_uninit_overlays(struct platform_device *pdev)

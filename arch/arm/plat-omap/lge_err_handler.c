@@ -77,7 +77,6 @@ void lge_mark_ap_crash()
 	lge_dynamic_nvdata_write(LGE_NVDATA_DYNAMIC_RESET_CAUSE_OFFSET,trap_buffer,1);
 }
 
-
 void lge_mark_cp_crash()
 {
 	char trap_buffer[2] = { LGE_NVDATA_DYNAMIC_RESET_CAUSE_VAL_CP_CRASH, 0x00 };
@@ -96,7 +95,6 @@ int lge_is_mark_cp_crash()
 	else
 		return 0;
 }
-
 
 
 void lge_user_reset()
@@ -125,7 +123,9 @@ static void lge_dump_kernel_log()
 			cnt = log_buf_copy(log_buf, idx, 1023);
 			if (cnt <= 0)
 				break;
+			// WBT 20110314	[START]
 			log_buf[cnt] = 0;
+			// WBT 20110314	[END]
 			sys_write(h_file,log_buf,cnt);
 			idx += cnt;
 		}		
@@ -166,10 +166,12 @@ void lge_dump_ap_crash()
 
 	lge_dump_kernel_log();
 
+	// TO DO : adb log is not saved.
+	//lge_dump_android_log();	
+	//msleep(100);
 	twl_i2c_write_u8(0x14, 0x47, 0x06); 
 	return;
 }
-
 
 void lge_store_ciq_reset(int is_ap, int cause)
 {
@@ -180,5 +182,4 @@ void lge_store_ciq_reset(int is_ap, int cause)
 
 	lge_dynamic_nvdata_write(LGE_NVDATA_DYNAMIC_CIQ_NVDATA_RESET_OFFSET, ciq_buffer, 2);
 }
-
 

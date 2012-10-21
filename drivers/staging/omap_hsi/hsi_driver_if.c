@@ -273,6 +273,13 @@ int hsi_open(struct hsi_device *dev)
 			"registered\n");
 		return -EINVAL;
 	}
+	if (ch->flags & HSI_CH_OPEN) {
+		dev_err(dev->device.parent,
+			"Port %d Channel %d already OPENED\n",
+			dev->n_p, dev->n_ch);
+		return -EBUSY;
+	}
+
 	port = ch->hsi_port;
 	hsi_ctrl = port->hsi_controller;
 
@@ -280,15 +287,8 @@ int hsi_open(struct hsi_device *dev)
 	hsi_clocks_enable_channel(dev->device.parent, ch->channel_number,
 				__func__);
 
-	if (ch->flags & HSI_CH_OPEN) {
-		dev_err(dev->device.parent,
-			"Port %d Channel %d already OPENED\n",
-			dev->n_p, dev->n_ch);
-		spin_unlock_bh(&hsi_ctrl->lock);
-		return -EBUSY;
-	}
-
-	ch->flags |= HSI_CH_OPEN;
+	/* Restart with flags cleaned up */
+	ch->flags = HSI_CH_OPEN;
 
 	hsi_driver_enable_interrupt(port, HSI_CAWAKEDETECTED | HSI_ERROROCCURED
 					| HSI_BREAKDETECTED);
@@ -310,7 +310,7 @@ EXPORT_SYMBOL(hsi_open);
  * @addr - pointer to a 32-bit word data to be written.
  * @size - number of 32-bit word to be written.
  *
- * Return 0 on sucess, a negative value on failure.
+ * Return 0 on success, a negative value on failure.
  * A success value only indicates that the request has been accepted.
  * Transfer is only completed when the write_done callback is called.
  *
@@ -321,7 +321,7 @@ int hsi_write(struct hsi_device *dev, u32 *addr, unsigned int size)
 	int err;
 
 	if (unlikely(!dev)) {
-		pr_err("Null dev pointer in hsi_write\n");
+		pr_err(LOG_NAME "Null dev pointer in hsi_write\n");
 		return -EINVAL;
 	}
 
@@ -340,28 +340,28 @@ int hsi_write(struct hsi_device *dev, u32 *addr, unsigned int size)
 	}
 
 	ch = dev->ch;
+	if (ch->write_data.addr != NULL) {
+		dev_err(dev->device.parent, "# Invalid request - Write "
+				"operation pending port %d channel %d\n",
+					ch->hsi_port->port_number,
+					ch->channel_number);
+		return -EINVAL;
+	}
 
 	spin_lock_bh(&ch->hsi_port->hsi_controller->lock);
+
+#ifdef USE_PM_RUNTIME_FOR_HSI
 	if (pm_runtime_suspended(dev->device.parent) ||
 		!ch->hsi_port->hsi_controller->clock_enabled)
+#else
+	if (!ch->hsi_port->hsi_controller->clock_enabled)
+#endif
 		dev_dbg(dev->device.parent,
 			"hsi_write with HSI clocks OFF, clock_enabled = %d\n",
 			ch->hsi_port->hsi_controller->clock_enabled);
 
 	hsi_clocks_enable_channel(dev->device.parent,
 				ch->channel_number, __func__);
-
-	if (ch->write_data.addr != NULL) {
-		dev_err(dev->device.parent, "# Invalid request - Write "
-				"operation pending port %d channel %d\n",
-					ch->hsi_port->port_number,
-					ch->channel_number);
-
-		hsi_clocks_disable_channel(dev->device.parent,
-					ch->channel_number, __func__);
-		spin_unlock_bh(&ch->hsi_port->hsi_controller->lock);
-		return -EINVAL;
-	}
 
 	ch->write_data.addr = addr;
 	ch->write_data.size = size;
@@ -403,7 +403,7 @@ int hsi_read(struct hsi_device *dev, u32 *addr, unsigned int size)
 	int err;
 
 	if (unlikely(!dev)) {
-		pr_err("Null dev pointer in hsi_read\n");
+		pr_err(LOG_NAME "Null dev pointer in hsi_read\n");
 		return -EINVAL;
 	}
 
@@ -424,8 +424,13 @@ int hsi_read(struct hsi_device *dev, u32 *addr, unsigned int size)
 	ch = dev->ch;
 
 	spin_lock_bh(&ch->hsi_port->hsi_controller->lock);
+
+#ifdef USE_PM_RUNTIME_FOR_HSI
 	if (pm_runtime_suspended(dev->device.parent) ||
 		!ch->hsi_port->hsi_controller->clock_enabled)
+#else
+	if (!ch->hsi_port->hsi_controller->clock_enabled)
+#endif
 		dev_dbg(dev->device.parent,
 			"hsi_read with HSI clocks OFF, clock_enabled = %d\n",
 			ch->hsi_port->hsi_controller->clock_enabled);
@@ -466,81 +471,132 @@ done:
 }
 EXPORT_SYMBOL(hsi_read);
 
-void __hsi_write_cancel(struct hsi_channel *ch)
+int __hsi_write_cancel(struct hsi_channel *ch)
 {
+	int err = -ENODATA;
+
 	if (ch->write_data.size == 1)
-		hsi_driver_cancel_write_interrupt(ch);
+		err = hsi_driver_cancel_write_interrupt(ch);
 	else if (ch->write_data.size > 1)
-		hsi_driver_cancel_write_dma(ch);
+		err = hsi_driver_cancel_write_dma(ch);
+	else
+		dev_dbg(ch->dev->device.parent, "%s : Nothing to cancel %d\n",
+			__func__, ch->write_data.size);
+
+	/* Trash any frame still in the FIFO */
+	hsi_hst_fifo_flush_channel(ch->hsi_port->hsi_controller,
+				   ch->hsi_port->port_number,
+				   ch->channel_number);
+
+	dev_dbg(ch->dev->device.parent, "%s : %d\n", __func__, err);
+
+	return err;
 }
 
 /**
  * hsi_write_cancel - Cancel pending write request.
  * @dev - hsi device channel where to cancel the pending write.
  *
- * write_done() callback will not be called after sucess of this function.
+ * write_done() callback will not be called after success of this function.
+ *
+ * Return: -ENXIO : No DMA channel found for specified HSI channel
+ *	   -ECANCELED : write cancel success, data not transfered to TX FIFO
+ *	   0 : transfer is already over, data already transfered to TX FIFO
+ *
+ * Note: whatever returned value, write callback will not be called after
+ *	 write cancel.
  */
-void hsi_write_cancel(struct hsi_device *dev)
+int hsi_write_cancel(struct hsi_device *dev)
 {
+	int err;
+
 	if (unlikely(!dev || !dev->ch)) {
 		pr_err(LOG_NAME "Wrong HSI device %p\n", dev);
-		return;
+		return -ENODEV;
 	}
 	dev_dbg(dev->device.parent, "%s ch %d\n", __func__, dev->n_ch);
 
 	if (unlikely(!(dev->ch->flags & HSI_CH_OPEN))) {
 		dev_err(dev->device.parent, "HSI device NOT open\n");
-		return;
+		return -ENODEV;
 	}
 
 	spin_lock_bh(&dev->ch->hsi_port->hsi_controller->lock);
 	hsi_clocks_enable_channel(dev->device.parent, dev->ch->channel_number,
 				__func__);
 
-	__hsi_write_cancel(dev->ch);
+	err = __hsi_write_cancel(dev->ch);
 
 	hsi_clocks_disable_channel(dev->device.parent, dev->ch->channel_number,
 				__func__);
 	spin_unlock_bh(&dev->ch->hsi_port->hsi_controller->lock);
+
+	return err;
 }
 EXPORT_SYMBOL(hsi_write_cancel);
 
-void __hsi_read_cancel(struct hsi_channel *ch)
+int __hsi_read_cancel(struct hsi_channel *ch)
 {
+	int err = -ENODATA;
+
 	if (ch->read_data.size == 1)
-		hsi_driver_cancel_read_interrupt(ch);
+		err = hsi_driver_cancel_read_interrupt(ch);
 	else if (ch->read_data.size > 1)
-		hsi_driver_cancel_read_dma(ch);
+		err = hsi_driver_cancel_read_dma(ch);
+	else
+		dev_dbg(ch->dev->device.parent, "%s : Nothing to cancel %d\n",
+			__func__, ch->read_data.size);
+
+	/* Trash any frame still in the FIFO */
+	hsi_hsr_fifo_flush_channel(ch->hsi_port->hsi_controller,
+				   ch->hsi_port->port_number,
+				   ch->channel_number);
+
+	dev_dbg(ch->dev->device.parent, "%s : %d\n", __func__, err);
+
+	return err;
 }
 
 /**
  * hsi_read_cancel - Cancel pending read request.
  * @dev - hsi device channel where to cancel the pending read.
  *
- * read_done() callback will not be called after sucess of this function.
+ * read_done() callback will not be called after success of this function.
+ *
+ * Return: -ENXIO : No DMA channel found for specified HSI channel
+ *	   -ECANCELED : read cancel success, data not available at expected
+ *			address.
+ *	   0 : transfer is already over, data already available at expected
+ *	       address.
+ *
+ * Note: whatever returned value, read callback will not be called after cancel.
  */
-void hsi_read_cancel(struct hsi_device *dev)
+int hsi_read_cancel(struct hsi_device *dev)
 {
+	int err;
+
 	if (unlikely(!dev || !dev->ch)) {
 		pr_err(LOG_NAME "Wrong HSI device %p\n", dev);
-		return;
+		return -ENODEV;
 	}
 	dev_dbg(dev->device.parent, "%s ch %d\n", __func__, dev->n_ch);
 
 	if (unlikely(!(dev->ch->flags & HSI_CH_OPEN))) {
 		dev_err(dev->device.parent, "HSI device NOT open\n");
-		return;
+		return -ENODEV;
 	}
 
 	spin_lock_bh(&dev->ch->hsi_port->hsi_controller->lock);
 	hsi_clocks_enable_channel(dev->device.parent, dev->ch->channel_number,
 				__func__);
 
-	__hsi_read_cancel(dev->ch);
+	err = __hsi_read_cancel(dev->ch);
 
 	hsi_clocks_disable_channel(dev->device.parent, dev->ch->channel_number,
 				__func__);
 	spin_unlock_bh(&dev->ch->hsi_port->hsi_controller->lock);
+
+	return err;
 }
 EXPORT_SYMBOL(hsi_read_cancel);
 
@@ -634,7 +690,7 @@ EXPORT_SYMBOL(hsi_unpoll);
  * @command - HSI I/O control command
  * @arg - parameter associated to the control command. NULL, if no parameter.
  *
- * Return 0 on sucess, a negative value on failure.
+ * Return 0 on success, a negative value on failure.
  *
  */
 int hsi_ioctl(struct hsi_device *dev, unsigned int command, void *arg)
@@ -738,10 +794,29 @@ int hsi_ioctl(struct hsi_device *dev, unsigned int command, void *arg)
 		*(u32 *)arg = hsi_inl(base, HSI_SYS_WAKE_REG(port));
 		break;
 	case HSI_IOCTL_FLUSH_RX:
-		hsi_outl(0, base, HSI_HSR_RXSTATE_REG(port));
+		if (!arg) {
+			err = -EINVAL;
+			goto out;
+		}
+		*(size_t *)arg = hsi_hsr_fifo_flush_channel(hsi_ctrl, port,
+							 channel);
+
+		/* Ack the RX Int */
+		hsi_outl_and(~HSI_HSR_DATAAVAILABLE(channel), base,
+			     HSI_SYS_MPU_STATUS_CH_REG(port, pport->n_irq,
+						       channel));
 		break;
 	case HSI_IOCTL_FLUSH_TX:
-		hsi_outl(0, base, HSI_HST_TXSTATE_REG(port));
+		if (!arg) {
+			err = -EINVAL;
+			goto out;
+		}
+		*(size_t *)arg = hsi_hst_fifo_flush_channel(hsi_ctrl, port,
+							 channel);
+		/* Ack the TX Int */
+		hsi_outl_and(~HSI_HST_DATAACCEPT(channel), base,
+			     HSI_SYS_MPU_STATUS_CH_REG(port, pport->n_irq,
+						       channel));
 		break;
 	case HSI_IOCTL_GET_CAWAKE:
 		if (!arg) {

@@ -1026,7 +1026,7 @@ int device_add(struct device *dev)
 
   #ifdef CONFIG_MACH_LGE_MMC_REFRESH	  
 
-  	error=bus_probe_device(dev);	//what the hell!!!!!
+  	error=bus_probe_device(dev);	
 	if(error == 0xbcbc)
 		goto DPMError;
   #else

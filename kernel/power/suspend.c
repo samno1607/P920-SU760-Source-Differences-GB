@@ -23,7 +23,6 @@
 #include <linux/slab.h>
 #include <linux/suspend.h>
 
-
 #include <linux/rtc.h> 
 #include <linux/cosmo/charger_rt9524.h>
 
@@ -40,8 +39,9 @@ const char *const pm_states[PM_SUSPEND_MAX] = {
 static struct platform_suspend_ops *suspend_ops;
 
 
-
+#if 1
 	struct timespec old_ts;  
+#endif
 
 
 /**
@@ -220,7 +220,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 			goto Close;
 	}
 
-
+#if 1
 	{
 		struct timespec ts;  
 		struct rtc_time tm; 
@@ -236,6 +236,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 		printk("([elasped_time=%ldsec, suspend]%d-%02d-%02d %02d:%02d:%02d.%09lu UTC, battery capa=%d, volt=%d)\n", elasped_time, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,  tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec, capa, volt);  
 		old_ts = ts;
 	}
+#endif
 
 	suspend_console();
 	saved_mask = clear_gfp_allowed_mask(GFP_IOFS);
@@ -258,7 +259,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 	set_gfp_allowed_mask(saved_mask);
 	resume_console();
 
-
+#if 1
 	{
 		struct timespec ts;  
 		struct rtc_time tm;  
@@ -274,6 +275,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 		printk("\n([elasped_time=%ldsec, resume]%d-%02d-%02d %02d:%02d:%02d.%09lu UTC, battery capa=%d, volt=%d)\n", elasped_time, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,  tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec, capa, volt);  
 		old_ts = ts;
 	}
+#endif
 	
  Close:
 	if (suspend_ops->end)

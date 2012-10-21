@@ -1,4 +1,8 @@
-
+/*
+ * Cosmopolitan wakelock check time func
+ *
+ * LGE_CHANGE [kibum.lee@lge.com] 2011-02-14
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -7,7 +11,6 @@
 
 #include <linux/fs.h>
 #include <linux/syscalls.h>
-
 
 #include <linux/rtc.h> 
 #include <linux/cosmo/charger_rt9524.h>
@@ -55,7 +58,24 @@ static int abnormal_wake_diable_check(void)
 
 static void wakelock_check_wq (struct work_struct *unused)
 {
+#if 0
+        //printk(KERN_INFO "wakelock_check ==> wakelock_check_wq\n");
 
+	struct timespec ts;  
+	struct rtc_time tm;  
+	getnstimeofday(&ts);  
+
+	int capa = get_bat_soc();		// battery capa get
+	int volt =	get_bat_volt();		// fuel gage volt
+	
+	rtc_time_to_tm(ts.tv_sec, &tm);  
+	printk("\n=============\n");
+	//printk("(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,  tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);  
+	printk("(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC, battery capa=%d, volt=%d)\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,  tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec, capa, volt);  
+	has_wake_lock(WAKE_LOCK_SUSPEND);
+	printk("=============\n");
+#endif
+	
 #ifdef CONFIG_HAS_WAKELOCK
 	if(abnormal_wake_diable_check()) 						
 	{
@@ -75,14 +95,14 @@ static void wakelock_check_wq (struct work_struct *unused)
 		}
 	}
 	else
-		abnormal_wake_unlock_call(0);							
-
+		abnormal_wake_unlock_call(0);					
+/*
 	if(tiler_memory_free_flag > 1)
 	{
 		printk(KERN_INFO "free tmm_dmm, tiler_memory_free_flag =%d\n", tiler_memory_free_flag);
 		if(dss_get_mainclk_state() == false)
 		{
-			tmm_dmm_free_page_stack();	 
+			tmm_dmm_free_page_stack();	
 			tiler_memory_free_flag=0;		
 		}
 	}
@@ -90,13 +110,15 @@ static void wakelock_check_wq (struct work_struct *unused)
 	if (tiler_memory_free_flag ==1)
 	{
 		tiler_memory_free_flag++;	
+		//tiler_memory_free_flag=0;		
 	}
-
-#endif
+*/
+#endif// <--]
 }
 
 static void wakelock_check_timer_func(unsigned long data)
 {
+        //wakelock_check_timer.expires = jiffies + (HZ*25);		//25sec
         wakelock_check_timer.expires = jiffies + (HZ*50);		//50sec
         add_timer(&wakelock_check_timer);
         schedule_work(&wakelock_checkwq);

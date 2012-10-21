@@ -189,10 +189,8 @@ static int product_has_function(struct android_usb_product *p,
 
 	for (i = 0; i < count; i++) {
 
-
 		printk("product_has_function,i:%d, cnt:%d, p : %s, functions : %s, f->disabled:%d \n",
 			i, count,  *functions, name, f->disabled);
-
 		if (!strcmp(name, *functions++))
 			return 1;
 	}
@@ -203,7 +201,6 @@ static int product_matches_functions(struct android_usb_product *p)
 {
 	struct usb_function		*f;
 	list_for_each_entry(f, &android_config_driver.functions, list) {
-	
 	if(f)
 	{
 		if( !strcmp(f->name, "rndis") )
@@ -211,7 +208,6 @@ static int product_matches_functions(struct android_usb_product *p)
 		f->disabled = 0; 
 		printk("usb %s is enabled\n", f->name);
 	}
-	
 
 		if (product_has_function(p, f) == !!f->disabled)
 			return 0;
@@ -224,6 +220,15 @@ static int get_product_id(struct android_dev *dev)
 	struct android_usb_product *p = dev->products;
 	int count = dev->num_products;
 	int i;
+/*
+	printk(KERN_INFO "get_product_id\n");
+
+	if (p) {
+		for (i = 0; i < count; i++, p++) {
+			if (product_matches_functions(p))
+				return p->product_id;
+		}
+	}
 	/* use default product ID */
 	return dev->product_id;
 }
@@ -357,6 +362,7 @@ void android_enable_function(struct usb_function *f, int enable)
 			if (enable)
 #ifdef CONFIG_USB_ANDROID_RNDIS_WCEIS
 			{
+//				dev->cdev->desc.bDeviceClass = USB_CLASS_WIRELESS_CONTROLLER;
 				dev->cdev->desc.bDeviceClass = USB_CLASS_MISC;
 				dev->cdev->desc.bDeviceSubClass = 0x02;
 				dev->cdev->desc.bDeviceProtocol = 0x01;
@@ -370,6 +376,16 @@ void android_enable_function(struct usb_function *f, int enable)
 				dev->cdev->desc.bDeviceSubClass = 0x0;
 				dev->cdev->desc.bDeviceProtocol = 0x0;				
 			}
+			/* Windows does not support other interfaces when RNDIS is enabled,
+			 * so we disable UMS and MTP when RNDIS is on.
+			 */
+/*			list_for_each_entry(func, &android_config_driver.functions, list) {
+				if (!strcmp(func->name, "usb_mass_storage")
+					|| !strcmp(func->name, "mtp")) {
+					usb_function_set_enabled(func, !enable);
+				}
+			}
+*/
 			if(enable)
 				dev->product_id = 0x61D7;
 			else

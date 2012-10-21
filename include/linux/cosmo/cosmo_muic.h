@@ -3,7 +3,6 @@
  *
  * Copyright (C) 2010 LGE, Inc.
  *
- * Author: Sookyoung Kim <sookyoung.kim@lge.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +23,7 @@
 #ifndef _MUIC_H_
 #define _MUIC_H_
 
+// hunsoo.lee cosmo gpio_wk2
 #if defined(CONFIG_MACH_LGE_COSMO_REV_A)
 #define MUIC_INT 2
 #else
@@ -47,13 +47,25 @@
 #define	CONTROL_2	(u8)0x02
 #define	SW_CONTROL	(u8)0x03
 #define	INT_STAT	(u8)0x04
+#if defined (CONFIG_MACH_LGE_CX2)
+#define	STATUS		(u8)0x06
+#else
 #define	STATUS		(u8)0x05
+#endif
+
+
 
 /* Masks for the each bit of CONTROL_1 register */
 #define	ID_2P2		(u8)0x40
 #define	ID_620		(u8)0x20
 #define	ID_200		(u8)0x10
-#define	VLDO		(u8)0x08
+
+#if defined (CONFIG_MACH_LGE_CX2)
+#define VLDO	(u8)0x00	/* Sets the voltage on the UID LDO. */
+#else
+#define VLDO	(u8)0x08	/* Sets the voltage on the UID LDO. */
+#endif
+
 #define	SEMREN		(u8)0x04
 #define	ADC_EN		(u8)0x02
 #define	CP_EN		(u8)0x01
@@ -102,7 +114,6 @@
 #define C1COMP      (u8)0x01	/* only on MAXIM */
 
 
-
 /* IDNO */
 #define IDNO_0000     0x00
 #define IDNO_0001     0x01
@@ -147,6 +158,10 @@ typedef enum {
 	MUIC_CP_UART,			// 7
 	MUIC_AP_USB,			// 8
 	MUIC_CP_USB,			// 9
+#if defined (CONFIG_CX2_MHL_TX_SII9244) 
+	MUIC_MHL,				// 14
+#endif
+
 } TYPE_MUIC_MODE;
 
 typedef enum {

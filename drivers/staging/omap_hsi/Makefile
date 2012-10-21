@@ -13,8 +13,11 @@ endif
 
 hsi_char-objs	:=	hsi-char.o hsi-if.o
 
-ifx-objs	:=	xmd-tty.o xmd-rmnet.o xmd-hsi-mcm.o xmd-rmnet.o xmd_hsi_mem.o xmd-hsi-ll.o \
-			ifx-hsi-cp-crash.o
+ifx-objs	:=	xmd-tty.o xmd-rmnet.o xmd-hsi-mcm.o xmd-rmnet.o xmd_hsi_mem.o xmd-hsi-ll.o
+
+ifeq ($(CONFIG_MACH_LGE_COSMOPOLITAN), y)
+	ifx-objs += ifx-hsi-cp-crash.o
+endif
 
 obj-$(CONFIG_OMAP_HSI)		+= omap_hsi.o
 obj-$(CONFIG_OMAP_HSI_CHAR)	+= hsi_char.o

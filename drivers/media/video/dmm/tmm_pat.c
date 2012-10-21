@@ -89,6 +89,7 @@ static void dmm_free_fast_list(struct fast *fast)
 	}
 }
 
+//static u32 fill_page_stack(struct mem *mem, struct mutex *mtx)
 static u32 fill_page_stack(struct mem *mem)	
 {
 	s32 i = 0;
@@ -116,8 +117,10 @@ static u32 fill_page_stack(struct mem *mem)
 					(void *)page_address(m->pg) + DMM_PAGE);
 		outer_flush_range(m->pa, m->pa + DMM_PAGE);
 
+		//mutex_lock(mtx);
 		count++;
 		list_add(&m->list, &mem->list);
+		//mutex_unlock(mtx);
 		
 	}
 	return 0x0;
@@ -185,6 +188,12 @@ static u32 *tmm_pat_get_pages(struct tmm *tmm, s32 n)
 	if (n <= 0 || n > 0x8000)
 		return NULL;
 
+/*
+	if (list_empty_careful(&pvt->free_list.list))
+		if (fill_page_stack(&pvt->free_list, &pvt->mtx))
+			return NULL;
+*/			
+
 	f = kmalloc(sizeof(*f), GFP_KERNEL);
 	if (!f)
 		return NULL;
@@ -214,10 +223,13 @@ static u32 *tmm_pat_get_pages(struct tmm *tmm, s32 n)
 		mutex_lock(&pvt->mtx);	
 
 		if (list_empty_careful(&pvt->free_list.list))
+			//if (fill_page_stack(&pvt->free_list, &pvt->mtx))
 			if (fill_page_stack(&pvt->free_list)) {
 				mutex_unlock(&pvt->mtx);			
 				goto cleanup;
 			}
+
+//		mutex_lock(&pvt->mtx);
 
 		pos = NULL;
 		q = NULL;
@@ -281,6 +293,7 @@ static void tmm_pat_free_pages(struct tmm *tmm, u32 *list)
 				} else {
 					__free_page(
 						((struct mem *)f->mem[i])->pg);
+					//vfree(f->mem[i]);
 					kfree(f->mem[i]);
 					count--;
 				}
@@ -335,6 +348,7 @@ struct tmm *tmm_pat_init(u32 pat_id)
 
 		count = 0;
 		if (list_empty_careful(&pvt->free_list.list))
+			//if (fill_page_stack(&pvt->free_list, &pvt->mtx))
 			if (fill_page_stack(&pvt->free_list))
 				goto error;
 

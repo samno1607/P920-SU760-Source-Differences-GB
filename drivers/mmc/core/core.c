@@ -86,6 +86,7 @@ static int mmc_schedule_delayed_work(struct delayed_work *work,
 static void mmc_flush_scheduled_work(void)
 {
 	flush_workqueue(workqueue);
+	//wake_unlock(&mmc_delayed_work_wake_lock);
 }
 
 /**
@@ -217,7 +218,7 @@ static void mmc_wait_done(struct mmc_request *mrq)
 
 
 
-/*
+/*20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
 **	return value changed 
 **	void -> int
 **	
@@ -237,13 +238,13 @@ int mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH
-	if(wait_for_completion_timeout(&complete,   HZ * 3)==0)
-	{
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
+	if(wait_for_completion_timeout(&complete,   HZ * 3)==0)		//3sec
+	{	// failed by time out
 		return 0xbcbc;
 	}
 	else
-	{
+	{	//success
 		return 0;
 	}
 	
@@ -251,7 +252,7 @@ int mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	wait_for_completion(&complete);
 
-#endif
+#endif	//20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC	[END]
 
 
 
@@ -416,6 +417,10 @@ int mmc_host_enable(struct mmc_host *host)
 
 	if (host->en_dis_recurs)
 		return 0;
+
+	if (host->nesting_cnt < 0)
+		
+	    host->nesting_cnt = 0;
 
 	if (host->nesting_cnt++)
 		return 0;
@@ -618,8 +623,14 @@ int mmc_host_lazy_disable(struct mmc_host *host)
 		return 0;
 
 	if (host->disable_delay) {
+#if 0		
+		mmc_schedule_delayed_work(&host->disable,
+				msecs_to_jiffies(host->disable_delay));
+		return 0;
+#else
 		return queue_delayed_work(workqueue, &host->disable, 
 				msecs_to_jiffies(host->disable_delay));
+#endif
 	} else
 		return mmc_host_do_disable(host, 1);
 }
@@ -914,7 +925,7 @@ u32 mmc_select_voltage(struct mmc_host *host, u32 ocr)
 
 
 	
-	mmc_delay(30);
+	mmc_delay(30); //	20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
 
 	return ocr;
 }
@@ -968,7 +979,7 @@ static void mmc_power_up(struct mmc_host *host)
 	 */
 
 	
-	mmc_delay(30);
+	mmc_delay(30);	// 10 -> 30	mmc_delay(10);	20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
 
 	host->ios.clock = host->f_min;
 
@@ -979,7 +990,7 @@ static void mmc_power_up(struct mmc_host *host)
 	 * This delay must be at least 74 clock sizes, or 1 ms, or the
 	 * time required to reach a stable voltage.
 	 */
-	mmc_delay(30);
+	mmc_delay(30);	// 10 -> 30	mmc_delay(10);	20110430 FW1 KIMBYUNGCHUL SD_CARD_LOCKUP_IN_omap_hsmmc_resume_FUNC
 }
 
 static void mmc_power_off(struct mmc_host *host)
@@ -1237,6 +1248,17 @@ void mmc_rescan(struct work_struct *work)
 		
 			extern int omap_hsmmc_regulator_force_refresh(struct mmc_host *mmc);
 						
+			//mmc_power_off(host);	//	it's alleady done.
+
+			//if (host->bus_ops && !host->bus_dead) 
+			//if(0){					//	it's alleady done.
+			//		if (host->bus_ops->remove)
+			//			host->bus_ops->remove(host);	//	mmc_sd_remove(host);
+			//		mmc_claim_host(host);
+			//		mmc_detach_bus(host);
+			//		mmc_release_host(host);
+			//		mmc_bus_put(host);
+			//}
 		
 			omap_hsmmc_regulator_force_refresh(host);
 			printk(KERN_WARNING "%s: omap_hsmmc_regulator_force_refresh() done \n",mmc_hostname(host), err);
@@ -1420,25 +1442,39 @@ int mmc_suspend_host(struct mmc_host *host)
 		cancel_delayed_work(&host->disable);
 	cancel_delayed_work(&host->detect);
 	mmc_flush_scheduled_work();
-
+#ifdef CONFIG_MACH_LGE_MMC_ALWAYSON
 	mmc_bus_get(host);
 	if (host->bus_ops && !host->bus_dead) {
 		if (host->bus_ops->suspend)
 			err = host->bus_ops->suspend(host);
 	}
 	mmc_bus_put(host);
+	//mmc_flush_scheduled_work();
 
 	if(!strncmp(mmc_hostname(host),"mmc1",4))
 	{
 		memcpy(&ios_backup,&host->ios,sizeof(struct mmc_ios));
 		printk("\n(IOS backup)\n%s: clock %uHz busmode %u powermode %u cs %u Vdd %u width %u timing %u\n",mmc_hostname(host), ios_backup.clock, ios_backup.bus_mode,ios_backup.power_mode, ios_backup.chip_select, ios_backup.vdd,ios_backup.bus_width, ios_backup.timing);
 	}
-	
+
 	{
 		if (!err && !(host->pm_flags & MMC_PM_KEEP_POWER))
 			mmc_power_off(host);
 	}
-
+#else
+	if(strncmp(mmc_hostname(host),"mmc1",4))
+		{
+			mmc_bus_get(host);
+			if (host->bus_ops && !host->bus_dead) {
+				if (host->bus_ops->suspend)
+					err = host->bus_ops->suspend(host);
+			}
+			mmc_bus_put(host);
+	
+			if (!err && !(host->pm_flags & MMC_PM_KEEP_POWER))
+				mmc_power_off(host);
+		}
+#endif
 	return err;
 }
 #else
@@ -1460,6 +1496,7 @@ int mmc_suspend_host(struct mmc_host *host)
 			err = host->bus_ops->suspend(host);
 	}
 	mmc_bus_put(host);
+	//mmc_flush_scheduled_work();
 
 	if (!err && !(host->pm_flags & MMC_PM_KEEP_POWER))
 		mmc_power_off(host);
@@ -1485,6 +1522,7 @@ int mmc_resume_host(struct mmc_host *host)
 		return 0;
 	}
 
+#ifdef CONFIG_MACH_LGE_MMC_ALWAYSON
 	if (host->bus_ops && !host->bus_dead) {
 		if (!(host->pm_flags & MMC_PM_KEEP_POWER)) 
 		{
@@ -1509,9 +1547,35 @@ int mmc_resume_host(struct mmc_host *host)
 		mmc_set_ios(host);
 		printk("\n(IOS restore)\n%s: clock %uHz busmode %u powermode %u cs %u Vdd %u  width %u timing %u\n",mmc_hostname(host), ios_backup.clock, ios_backup.bus_mode,ios_backup.power_mode, ios_backup.chip_select, ios_backup.vdd,ios_backup.bus_width, ios_backup.timing);
 	}
-	
+#else
+	if(strncmp(mmc_hostname(host),"mmc1",4))
+		{
+			if (host->bus_ops && !host->bus_dead) {
+				if (!(host->pm_flags & MMC_PM_KEEP_POWER)) {
+					mmc_power_up(host);
+					mmc_select_voltage(host, host->ocr);
+				}
+				BUG_ON(!host->bus_ops->resume);
+				err = host->bus_ops->resume(host);
+				if (err) {
+					printk(KERN_WARNING "%s: error %d during resume "
+							    "(card was removed?)\n",
+							    mmc_hostname(host), err);
+					err = 0;
+				}
+			}
+		}
+#endif	
 	mmc_bus_put(host);
-
+#ifdef CONFIG_MACH_LGE_MMC_ALWAYSON
+// removed
+#else
+	/*
+	 * We add a slight delay here so that resume can progress
+	 * in parallel.
+	 */
+	mmc_detect_change(host, 1);
+#endif
 	return err;
 }
 #else
@@ -1533,7 +1597,7 @@ int mmc_resume_host(struct mmc_host *host)
 		}
 		BUG_ON(!host->bus_ops->resume);
 		err = host->bus_ops->resume(host);
-	#ifdef CONFIG_MACH_LGE_MMC_REFRESH
+	#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
 		if(err == 0xbcbc)
 		{
 			printk(KERN_WARNING "%s: error %x during resume "
@@ -1541,7 +1605,7 @@ int mmc_resume_host(struct mmc_host *host)
 					    mmc_hostname(host), err);
 
 		}else
-	#endif
+	#endif		
 		if (err) {
 			printk(KERN_WARNING "%s: error %d during resume "
 					    "(card was removed?)\n",

@@ -356,7 +356,7 @@ extern void part_round_stats(int cpu, struct hd_struct *part);
 extern int add_disk(struct gendisk *disk);
 #else
 extern void add_disk(struct gendisk *disk);
-#endif								  
+#endif							
 
 
 extern void del_gendisk(struct gendisk *gp);

@@ -456,6 +456,7 @@ struct ext_slave_descr yas529_descr = {
 	/*.resume           = */ yas529_resume,
 	/*.read             = */ yas529_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "yas529",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_YAS529,

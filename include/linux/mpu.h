@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
-  $
+ $
  */
 
 #ifndef __MPU_H_
@@ -23,6 +23,26 @@
 #ifdef __KERNEL__
 #include <linux/types.h>
 #endif
+
+//#define MPL_IUS_BUILD
+
+#ifndef MPL_IUS_BUILD
+#define MPL_IKR_BUILD //IKR local copy
+#endif 
+
+
+/**
+FEATURES DEFIED BY IKR
+*/
+#ifdef MPL_IKR_BUILD
+#define FEATURE_USES_MPU_ACCEL
+#define FEATURE_USES_9AXIS_FUSION
+#define FEATURE_USES_LPF
+#define FEATURE_USES_TIMERIRQ
+#define FEATURE_USES_GM
+#endif //MPL_IKR_BUILD
+
+
 
 #ifdef M_HW
 #include "mpu6000.h"
@@ -83,9 +103,9 @@
 #define MPU_CONFIG_COMPASS          (0x21)
 #define MPU_CONFIG_PRESSURE         (0x22)
 
-#define MPU_SET_CALIBRATION_FINISHED (0x14)
-#define MPU_GET_CALIBRATION_STATUS (0x15)
-
+#define MPU_GET_CONFIG_ACCEL        (0x28)
+#define MPU_GET_CONFIG_COMPASS      (0x29)
+#define MPU_GET_CONFIG_PRESSURE     (0x2a)
 
 /* Structure for the following IOCTL's:
    MPU_SET_RAM
@@ -101,7 +121,7 @@ struct mpu_read_write {
 	unsigned char *data;
 };
 
-struct irq_data {
+struct mpuirq_data {
 	int interruptcount;
 	unsigned long long irqtime;
 	int data_type;
@@ -109,24 +129,38 @@ struct irq_data {
 	void *data;
 };
 enum ext_slave_config_key {
-    MPU_SLAVE_CONFIG_ODR_SUSPEND,
-    MPU_SLAVE_CONFIG_ODR_RESUME,
-    MPU_SLAVE_CONFIG_FSR_SUSPEND,
-    MPU_SLAVE_CONFIG_FSR_RESUME,
-    MPU_SLAVE_CONFIG_MOT_THS,
-    MPU_SLAVE_CONFIG_NMOT_THS,
-    MPU_SLAVE_CONFIG_MOT_DUR,
-    MPU_SLAVE_CONFIG_NMOT_DUR,
-    MPU_SLAVE_CONFIG_NUM_CONFIG_KEYS,
+	MPU_SLAVE_CONFIG_ODR_SUSPEND,
+	MPU_SLAVE_CONFIG_ODR_RESUME,
+	MPU_SLAVE_CONFIG_FSR_SUSPEND,
+	MPU_SLAVE_CONFIG_FSR_RESUME,
+	MPU_SLAVE_CONFIG_MOT_THS,
+	MPU_SLAVE_CONFIG_NMOT_THS,
+	MPU_SLAVE_CONFIG_MOT_DUR,
+	MPU_SLAVE_CONFIG_NMOT_DUR,
+	MPU_SLAVE_CONFIG_IRQ_SUSPEND,
+	MPU_SLAVE_CONFIG_IRQ_RESUME,
+	MPU_SLAVE_CONFIG_NUM_CONFIG_KEYS,
 };
+
+/* For the MPU_SLAVE_CONFIG_IRQ_SUSPEND and MPU_SLAVE_CONFIG_IRQ_RESUME */
+enum ext_slave_config_irq_type {
+	MPU_SLAVE_IRQ_TYPE_NONE,
+	MPU_SLAVE_IRQ_TYPE_MOTION,
+	MPU_SLAVE_IRQ_TYPE_DATA_READY,
+};
+
 /* Structure for the following IOCTS's
  * MPU_CONFIG_ACCEL
  * MPU_CONFIG_COMPASS
  * MPU_CONFIG_PRESSURE
+ * MPU_GET_CONFIG_ACCEL
+ * MPU_GET_CONFIG_COMPASS
+ * MPU_GET_CONFIG_PRESSURE
  */
 struct ext_slave_config {
 	int key;
 	int len;
+	int apply;
 	void *data;
 };
 
@@ -147,18 +181,24 @@ enum ext_slave_id {
 	ACCEL_ID_KXTF9,
 	ACCEL_ID_BMA150,
 	ACCEL_ID_BMA222,
+	ACCEL_ID_BMA250,	
 	ACCEL_ID_ADI346,
 	ACCEL_ID_MMA8450,
-	ACCEL_ID_MMA8451,
+	ACCEL_ID_MMA845X,
 	ACCEL_ID_MPU6000,
+    ACCEL_ID_LIS3DH,
 
 	COMPASS_ID_AKM,
 	COMPASS_ID_AMI30X,
 	COMPASS_ID_YAS529,
+	COMPASS_ID_YAS530,
 	COMPASS_ID_HMC5883,
 	COMPASS_ID_LSM303,
 	COMPASS_ID_MMC314X,
-	COMPASS_ID_HSCDTD00XX,
+	COMPASS_ID_MMC328X, //MEMSIC328X
+	COMPASS_ID_HSCDTD002B,
+	COMPASS_ID_HSCDTD004A,
+	COMPASS_ID_AMS0303,
 
 	PRESSURE_ID_BMA085,
 };
@@ -222,6 +262,7 @@ struct tFixPntRange {
  *  @init:	function used to preallocate memory used by the driver
  *  @exit:	function used to free memory allocated for the driver
  *  @config:	function used to configure the device
+ *  @get_config:function used to get the device's configuration
  *
  *  @name:	text name of the device
  *  @type:	device type. enum ext_slave_type
@@ -255,6 +296,10 @@ struct ext_slave_descr {
 		       struct ext_slave_descr *slave,
 		       struct ext_slave_platform_data *pdata,
 		       struct ext_slave_config *config);
+	int (*get_config) (void *mlsl_handle,
+			   struct ext_slave_descr *slave,
+			   struct ext_slave_platform_data *pdata,
+			   struct ext_slave_config *config);
 
 	char *name;
 	unsigned char type;
@@ -295,65 +340,79 @@ struct mpu3050_platform_data {
 */
 #define get_accel_slave_descr NULL
 
-#ifdef CONFIG_SENSORS_ADXL346	/* ADI accelerometer */
+#ifdef CONFIG_MPU_SENSORS_ADXL346	/* ADI accelerometer */
 struct ext_slave_descr *adxl346_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr adxl346_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_BMA150	/* Bosch accelerometer */
+#ifdef CONFIG_MPU_SENSORS_BMA150	/* Bosch accelerometer */
 struct ext_slave_descr *bma150_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr bma150_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_BMA222	/* Bosch 222 accelerometer */
+#ifdef CONFIG_MPU_SENSORS_BMA222	/* Bosch 222 accelerometer */
 struct ext_slave_descr *bma222_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr bma222_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_KXSD9	/* Kionix accelerometer */
+#ifdef CONFIG_MPU_SENSORS_BMA250	/* Bosch 250 accelerometer */
+struct ext_slave_descr *bma250_get_slave_descr(void);
+#undef get_accel_slave_descr
+#define get_accel_slave_descr bma250_get_slave_descr
+#endif
+
+#ifdef CONFIG_MPU_SENSORS_KXSD9	/* Kionix accelerometer */
 struct ext_slave_descr *kxsd9_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr kxsd9_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_KXTF9	/* Kionix accelerometer */
+#ifdef CONFIG_MPU_SENSORS_KXTF9	/* Kionix accelerometer */
 struct ext_slave_descr *kxtf9_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr kxtf9_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_LIS331DLH	/* ST accelerometer */
+#ifdef CONFIG_MPU_SENSORS_LIS331DLH	/* ST accelerometer */
 struct ext_slave_descr *lis331dlh_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr lis331dlh_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_LSM303DLHA	/* ST accelerometer */
+
+#ifdef CONFIG_MPU_SENSORS_LIS3DH	/* ST accelerometer */
+struct ext_slave_descr *lis3dh_get_slave_descr(void);
+#undef get_accel_slave_descr
+#define get_accel_slave_descr lis3dh_get_slave_descr
+#endif
+
+#ifdef CONFIG_MPU_SENSORS_LSM303DLHA	/* ST accelerometer */
 struct ext_slave_descr *lsm303dlha_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr lsm303dlha_get_slave_descr
 #endif
 
 /* MPU6000 Accel */
-#if defined(CONFIG_SENSORS_MPU6000) || defined(CONFIG_SENSORS_MPU6000_MODULE)
+#if defined(CONFIG_MPU_SENSORS_MPU6000) || \
+    defined(CONFIG_MPU_SENSORS_MPU6000_MODULE)
 struct ext_slave_descr *mantis_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr mantis_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_MMA8450	/* Freescale accelerometer */
+#ifdef CONFIG_MPU_SENSORS_MMA8450	/* Freescale accelerometer */
 struct ext_slave_descr *mma8450_get_slave_descr(void);
 #undef get_accel_slave_descr
 #define get_accel_slave_descr mma8450_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_MMA8451	/* Freescale accelerometer */
-struct ext_slave_descr *mma8451_get_slave_descr(void);
+#ifdef CONFIG_MPU_SENSORS_MMA845X	/* Freescale accelerometer */
+struct ext_slave_descr *mma845x_get_slave_descr(void);
 #undef get_accel_slave_descr
-#define get_accel_slave_descr mma8451_get_slave_descr
+#define get_accel_slave_descr mma845x_get_slave_descr
 #endif
 
 
@@ -362,57 +421,83 @@ struct ext_slave_descr *mma8451_get_slave_descr(void);
 */
 #define get_compass_slave_descr NULL
 
-#ifdef CONFIG_SENSORS_AK8975	/* AKM compass */
+#ifdef CONFIG_MPU_SENSORS_AK8975	/* AKM compass */
 struct ext_slave_descr *ak8975_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr ak8975_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_AMI30X	/* AICHI Steel compass */
+#ifdef CONFIG_MPU_SENSORS_AMI30X	/* AICHI Steel compass */
 struct ext_slave_descr *ami30x_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr ami30x_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_HMC5883	/* Honeywell compass */
+#ifdef CONFIG_MPU_SENSORS_HMC5883	/* Honeywell compass */
 struct ext_slave_descr *hmc5883_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr hmc5883_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_MMC314X	/* MEMSIC compass */
+#ifdef CONFIG_MPU_SENSORS_MMC314X	/* MEMSIC compass */
 struct ext_slave_descr *mmc314x_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr mmc314x_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_LSM303DLHM	/* ST compass */
+#ifdef CONFIG_MPU_SENSORS_MMC328X	/* MEMSIC compass */
+struct ext_slave_descr *mmc328x_get_slave_descr(void);
+#undef get_compass_slave_descr
+#define get_compass_slave_descr mmc328x_get_slave_descr
+#endif
+
+#ifdef CONFIG_MPU_SENSORS_LSM303DLHM	/* ST compass */
 struct ext_slave_descr *lsm303dlhm_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr lsm303dlhm_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_YAS529	/* Yamaha compass */
+#ifdef CONFIG_MPU_SENSORS_YAS529	/* Yamaha compass */
 struct ext_slave_descr *yas529_get_slave_descr(void);
 #undef get_compass_slave_descr
 #define get_compass_slave_descr yas529_get_slave_descr
 #endif
 
-#ifdef CONFIG_SENSORS_HSCDTD00XX	/* Alps compass */
-struct ext_slave_descr *hscdtd00xx_get_slave_descr(void);
+#ifdef CONFIG_MPU_SENSORS_YAS530	/* Yamaha compass */
+struct ext_slave_descr *yas530_get_slave_descr(void);
 #undef get_compass_slave_descr
-#define get_compass_slave_descr hscdtd00xx_get_slave_descr
+#define get_compass_slave_descr yas530_get_slave_descr
 #endif
+
+#ifdef CONFIG_MPU_SENSORS_HSCDTD002B	/* Alps HSCDTD002B compass */
+struct ext_slave_descr *hscdtd002b_get_slave_descr(void);
+#undef get_compass_slave_descr
+#define get_compass_slave_descr hscdtd002b_get_slave_descr
+#endif
+
+#ifdef CONFIG_MPU_SENSORS_HSCDTD004A	/* Alps HSCDTD004A compass */
+struct ext_slave_descr *hscdtd004a_get_slave_descr(void);
+#undef get_compass_slave_descr
+#define get_compass_slave_descr hscdtd004a_get_slave_descr
+#endif
+
+#ifdef CONFIG_MPU_SENSORS_AMS0303	/* Amotech ams0303 compass */
+struct ext_slave_descr *ams0303_get_slave_descr(void);
+#undef get_compass_slave_descr
+#define get_compass_slave_descr ams0303_get_slave_descr
+#endif
+
 
 /*
     Pressure
 */
 #define get_pressure_slave_descr NULL
 
-#ifdef CONFIG_SENSORS_BMA085	/* BMA pressure */
+#ifdef CONFIG_MPU_SENSORS_BMA085	/* BMA pressure */
 struct ext_slave_descr *bma085_get_slave_descr(void);
 #undef get_pressure_slave_descr
 #define get_pressure_slave_descr bma085_get_slave_descr
 #endif
 
 #endif				/* __MPU_H_ */
+

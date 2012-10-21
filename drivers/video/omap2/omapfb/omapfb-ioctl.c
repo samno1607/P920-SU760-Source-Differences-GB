@@ -613,7 +613,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 
 #ifdef LGE_FW_TDMB
 		struct omapfb_ccs			ccs_info;
-#endif
+#endif // LGE_FW_TDMB
 	} p;
 
 	int r = 0;
@@ -899,17 +899,6 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 #ifdef LGE_FW_TDMB
 	case OMAPFB_SET_CCS_MATRIX :
 		printk("OMAPFB_SET_CCS_MATRIX\n");
-
-		{
-			if (display->state != OMAP_DSS_DISPLAY_ACTIVE)
-			{
-				DBG("OMAPFB_SET_CCS_MATRIX(For DMB color tuning) called, but do nothing\n");
-
-				r = -EFAULT;
-				break;
-			}
-		}
-		
 		if (copy_from_user(&p.ccs_info, (void __user *)arg,
 					sizeof(p.ccs_info))) {
 			r = -EFAULT;
@@ -937,7 +926,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 			r = display->set_ccs(display, &ccs_info);
 		}
 		break;
-#endif
+#endif // LGE_FW_TDMB
 
 	default:
 		dev_err(fbdev->dev, "Unknown ioctl 0x%x\n", cmd);

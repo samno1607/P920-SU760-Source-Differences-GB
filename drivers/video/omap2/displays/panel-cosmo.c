@@ -1,7 +1,6 @@
 /*
  * Cosmopolitan mipi interface support
  *
- * 
  */
 
 #include <linux/module.h>
@@ -65,9 +64,7 @@ int cosmo_panel_suspend_flag=0;
 #define DCS_CTRL_DISPLAY		0x53
 #define DCS_WRITE_CABC			0x55
 #define DCS_READ_CABC			0x56
-
 #define DCS_DEEP_STANDBY_IN		0xC1
-
 #define DCS_GET_ID				0xf8
 
 #define DSI_DT_DCS_SHORT_WRITE_0	0x05
@@ -136,15 +133,72 @@ extern int lm3528_getBrightness(void);
 extern ssize_t lm3528_setBrightness(int		brightness, size_t count);
 int panel_cosmo_brightness_read(void)
 {
+#if 1
 	return lm3528_getBrightness();
+#else
+	char buf[10];
+	int tempbrightness = 0;
+	
+	int h_file = 0;
+	int ret = 0;	
+
+	mm_segment_t oldfs = get_fs();
+	memset(buf, 0x00, sizeof(char)*10);	
+	set_fs(KERNEL_DS);
+	h_file = sys_open("/sys/devices/platform/i2c_omap.2/i2c-2/2-0036/brightness", O_RDWR,0);
+
+	if(h_file >= 0)
+	{	
+		ret = sys_read( h_file, buf, 10);
+
+		tempbrightness = (int)simple_strtol(buf, NULL, 10);
+		printk("panel_cosmo_brightness_read %d.\n", tempbrightness);
+
+		sys_close(h_file);
+	}
+	else
+	{
+		printk("panel_cosmo_brightness_read = %d.\n",h_file);			
+		return oldBacklightBrightness;
+	}
+
+	set_fs(oldfs);
+
+	return tempbrightness;
+#endif	
 }
 
 void panel_cosmo_brightness_write(int value)
 
 {
+#if 1
 	if(value == -1) return;
 
 	lm3528_setBrightness(value, 0);
+#else
+	int h_file = 0;
+	int ret = 0;
+	char buf[10];
+	int size = 0;
+	
+	if(value == -1) return;
+
+	mm_segment_t oldfs = get_fs();
+	memset(buf, 0x00, sizeof(char)*10);	
+	set_fs(KERNEL_DS);
+	h_file = sys_open("/sys/devices/platform/i2c_omap.2/i2c-2/2-0036/brightness", O_RDWR,0);
+
+	if(h_file >= 0)
+	{	
+		size = sprintf(buf,"%d",value);
+
+		ret = sys_write( h_file, buf, size);
+	
+
+		sys_close(h_file);
+	}
+	set_fs(oldfs);
+#endif
 }
 #endif
 
@@ -168,6 +222,14 @@ static void panel_cosmo_start_s3d_pwm_timer(void)
 		printk("S3D Barrier : no timer. can't start pwm\n");
 		return;
 	}
+	/** L8.2 **/
+//	omap_dm_timer_enable(s3d_pwm_timer); 
+//	omap_dm_timer_set_source(s3d_pwm_timer, OMAP_TIMER_SRC_32_KHZ);
+//	omap_dm_timer_stop(s3d_pwm_timer);
+//	omap_dm_timer_set_load(s3d_pwm_timer, 1, -S3D_BARRIER_INVERSION_COUTER_VALUE);
+//	omap_dm_timer_set_pwm(s3d_pwm_timer, 0, 1, OMAP_TIMER_TRIGGER_OVERFLOW);
+//	omap_dm_timer_write_counter(s3d_pwm_timer, -S3D_BARRIER_INVERSION_COUTER_VALUE);
+//	omap_dm_timer_start(s3d_pwm_timer);
 	/** L10.1 **/
 	omap_dm_timer_enable(s3d_pwm_timer); 
 	omap_dm_timer_set_source(s3d_pwm_timer, OMAP_TIMER_SRC_32_KHZ);
@@ -202,6 +264,7 @@ static int gpio_3d_boost_enable_state = 0;
 
 
 u8 lcd_command_for_mipi[][30] = {
+// Darren.Kang 2010.12.24 Change Initial Code for LCD [ST]
 	{SHORT_CMD_MIPI,DSI_GEN_SHORTWRITE_1PARAM,0x01,0x20,},											/* Display Inversion */ 																	
 	{SHORT_CMD_MIPI,DSI_GEN_SHORTWRITE_2PARAM,0x02,0x36,0x00,}, 									/* Set Address Mode */
 	{SHORT_CMD_MIPI,DSI_GEN_SHORTWRITE_2PARAM,0x02,0x3A,0x70,}, 									/* Interface Pixel Fromat */
@@ -227,6 +290,7 @@ u8 lcd_command_for_mipi[][30] = {
 	{LONG_CMD_MIPI, DSI_GEN_LONGWRITE,0x0A,0xD4, 0x33, 0x22, 0x77, 0x02, 0x00, 0x00, 0x30, 0x01, 0x01,}, /* Positive Gamma Curve for Blue */
 	{LONG_CMD_MIPI, DSI_GEN_LONGWRITE,0x0A,0xD5, 0x33, 0x22, 0x77, 0x02, 0x00, 0x00, 0x30, 0x01, 0x01,}, /* Negative Gamma Curve for Blue */
 	{END_OF_COMMAND, },	
+// Darren.Kang 2010.12.24 Change Initial Code for LCD [END]
 };
 
 static void cosmo_panel_esd_work(struct work_struct *work);
@@ -236,6 +300,9 @@ static void toggle_3d_bank_sel_gpio(void)
 {
 	gpio_banksel_state = !gpio_banksel_state;
 	gpio_set_value(COSMO_PANEL_3D_BANK_SEL_GPIO, gpio_banksel_state);
+//	gpio_set_value(COSMO_PANEL_3D_BANK_SEL_GPIO, 1);
+//	gpio_set_value(COSMO_PANEL_3D_BANK_SEL_GPIO, 0);
+//	printk("banksel inversion %d\n", gpio_banksel_state);
 }
 
 static enum hrtimer_restart timer_cb(struct hrtimer *timer)
@@ -722,7 +789,6 @@ static ssize_t cosmo_panel_barrier_enable_store(struct device *dev,
 	
 	if(td->barrier_enabled == barrier_enable)
 		return count;
-
 	return count;
 }
 
@@ -737,7 +803,7 @@ extern void tmm_dmm_free_page_stack(void);
 static ssize_t cosmo_sgx_manual_recovery_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	extern unsigned int sgx_manual_recovery;
+//	extern unsigned int sgx_manual_recovery;
 		
 	
 		struct omap_dss_device *dssdev = to_dss_device(dev);
@@ -752,9 +818,8 @@ static ssize_t cosmo_sgx_manual_recovery_store(struct device *dev,
 			tmm_dmm_free_page_stack();
 		}
 		else	
-	sgx_manual_recovery = 1;
+//	sgx_manual_recovery = 1;
 		
-
 	return count;
 
 }
@@ -763,7 +828,6 @@ static ssize_t cosmo_sgx_manual_recovery_store(struct device *dev,
 static DEVICE_ATTR(num_dsi_errors, S_IRUGO, cosmo_panel_num_errors_show, NULL);
 static DEVICE_ATTR(hw_revision, S_IRUGO, cosmo_panel_hw_revision_show, NULL);
 static DEVICE_ATTR(barrier_enable, S_IRUGO|S_IWUSR|S_IWGRP, cosmo_panel_barrier_enable_show, cosmo_panel_barrier_enable_store);
-
 static DEVICE_ATTR(sgx_manual_recovery, S_IRUGO|S_IWUSR|S_IWGRP, cosmo_sgx_manual_recovery_show, cosmo_sgx_manual_recovery_store);
 
 void cosmo_panel_reset_lcd(void)
@@ -809,7 +873,6 @@ static int cosmo_panel_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err;
 	cosmo_panel_dcs_write_0(DCS_DISPLAY_ON);	
- 
 #if defined(CONFIG_COSMO_S_CURVE) && defined(CONFIG_COSMO_GAMMA)                         
         dispc_enable_gamma(OMAP_DSS_CHANNEL_LCD, 0);
         dispc_enable_gamma(OMAP_DSS_CHANNEL_LCD2, 0);
@@ -840,7 +903,6 @@ static struct attribute *cosmo_panel_attrs[] = {
 	&dev_attr_num_dsi_errors.attr,
 	&dev_attr_hw_revision.attr,
 	&dev_attr_barrier_enable.attr,
-
 	&dev_attr_sgx_manual_recovery.attr,
 	NULL,
 };
@@ -908,11 +970,9 @@ static int cosmo_panel_probe(struct omap_dss_device *dssdev)
 		return -ENODEV;
 	}
 	
-	
 	dssdev->panel.s3d_info.type = S3D_DISP_ROW_IL;
 	/*First scan line is always for right view*/ 
 	dssdev->panel.s3d_info.order = S3D_DISP_ORDER_R;
-	
 
 	/* if no platform set_backlight() defined, presume DSI backlight
 	 * control */
@@ -1060,12 +1120,11 @@ static int cosmo_panel_suspend(struct omap_dss_device *dssdev)
 	}
 	
 	dsi_bus_lock(DSI2);
-
 	dsi_enable_dcs_cmd(dssdev,DSI2);	
    	cosmo_panel_dcs_write_0(DCS_SLEEP_IN);
 	dsi_disable_dcs_cmd(dssdev,DSI2);	
 
-	msleep(100);
+	msleep(100); // skipped 7 frames  
 
 	dsi_enable_dcs_cmd(dssdev,DSI2);	
 	cosmo_panel_dcs_write_1(DCS_DEEP_STANDBY_IN, 0x01);
@@ -1073,13 +1132,10 @@ static int cosmo_panel_suspend(struct omap_dss_device *dssdev)
 	
 	msleep(10);
 
-
 	omapdss_dsi_display_disable(dssdev);
-
 	barrier_init(td, false);     
 	if (dssdev->platform_disable)
 		dssdev->platform_disable(dssdev);
-
 	dsi_bus_unlock(DSI2);
 	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
 	cosmo_panel_suspend_flag = 1;
@@ -1089,6 +1145,17 @@ static int cosmo_panel_suspend(struct omap_dss_device *dssdev)
 
 static int cosmo_panel_resume(struct omap_dss_device *dssdev)
 {
+	//struct cosmo_panel_data *td = dev_get_drvdata(&dssdev->dev);
+	//struct backlight_device *bldev = td->bldev;
+
+/*
+	gpio_set_value(COSMO_PANEL_LCD_EN, 1);
+	msleep(30);	
+	gpio_set_value(COSMO_PANEL_LCD_EN, 0);
+	msleep(30);	
+	gpio_set_value(COSMO_PANEL_LCD_EN, 1);
+	msleep(20);
+	*/
 	
 	cosmo_panel_enable(dssdev);
 	cosmo_panel_suspend_flag = 0;

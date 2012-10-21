@@ -41,7 +41,9 @@
 #endif
 #include <linux/workqueue.h>
 
+#if 1 //LGE_RIL_RECOVERY
 static int rindrv_count = 0;
+#endif
 static struct net_device **rin_devs;
 
 static int rin_maxdev = RIN_NRUNIT;
@@ -437,7 +439,9 @@ rin_nd_close(struct net_device *dev)
 	sl->xleft    = 0;
 	spin_unlock_bh(&sl->lock);
 
+#if 1 //LGE_RIL_RECOVERY
 	printk("%s - line : %d\n", __FUNCTION__, __LINE__);
+#endif
 	return 0;
 }
 
@@ -452,7 +456,9 @@ static int rin_nd_open(struct net_device *dev)
 
 	sl->flags &= (1 << SLF_INUSE);
 	netif_start_queue(dev);
+#if 1 //LGE_RIL_RECOVERY
 	printk("%s - line : %d\n", __FUNCTION__, __LINE__);
+#endif
 	return 0;
 }
 
@@ -732,7 +738,9 @@ static int rin_open(struct tty_struct *tty)
 {
 	struct rin_st *sl;
 	int err;
+#if 1 //LGE_RIL_RECOVERY
 	static int realloc_count = 0;
+#endif
 
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
@@ -758,9 +766,12 @@ static int rin_open(struct tty_struct *tty)
 
 	/* OK.  Find a free RIN channel to use. */
 	err = -ENFILE;
+#if 1 //LGE_RIL_RECOVERY
 	if(rindrv_count==0)
 	{
+#endif
 		sl = rin_alloc(tty_devnum(tty));
+#if 1 //LGE_RIL_RECOVERY
 		printk("%s - line : %d, sl->dev = %x\n", __FUNCTION__, __LINE__, sl->dev);
 	}
 	else if(rindrv_count>0)
@@ -777,6 +788,7 @@ static int rin_open(struct tty_struct *tty)
 		printk("%s - line : %d, error rindrv_count = %d\n", __FUNCTION__, __LINE__, rindrv_count);
 		sl = NULL;
 	}
+#endif
 	if (sl == NULL)
 		goto err_exit;
 
@@ -785,8 +797,10 @@ static int rin_open(struct tty_struct *tty)
 	sl->line = tty_devnum(tty);
 	sl->pid = current->pid;
 
+#if 1 //LGE_RIL_RECOVERY
 	if(rindrv_count==0 && realloc_count == 0)
 	{
+#endif
 	if (!test_bit(SLF_INUSE, &sl->flags)) {
 		/* Perform the low-level RIN initialization. */
 		err = rin_alloc_bufs(sl, RIN_MTU);
@@ -799,6 +813,7 @@ static int rin_open(struct tty_struct *tty)
 		if (err)
 			goto err_free_bufs;
 	}
+#if 1 //LGE_RIL_RECOVERY
 	}
 	else if( rindrv_count == realloc_count)
 	{
@@ -807,6 +822,7 @@ static int rin_open(struct tty_struct *tty)
 		printk("%s - line : %d, realloc done!!\n", __FUNCTION__, __LINE__);
 
 	}
+#endif
 	/* Done.  We have linked the TTY line to a channel. */
 	rtnl_unlock();
 	tty->receive_room = 65536;	/* We don't flow control */
@@ -822,7 +838,9 @@ err_free_chan:
 
 err_exit:
 	rtnl_unlock();
+#if 1 //LGE_RIL_RECOVERY
 	printk("%s - line : %d - error exit\n", __FUNCTION__, __LINE__);
+#endif
 
 	/* Count references from TTY module */
 	return err;
@@ -861,14 +879,18 @@ static void rin_close(struct tty_struct *tty)
 	if (!sl || sl->magic != RIN_MAGIC || sl->tty != tty)
 		return;
 
+#if 1 //LGE_RIL_RECOVERY
 	tty_ldisc_flush(tty);
+#endif
 	tty->disc_data = NULL;
 	sl->tty = NULL;
 	if (!sl->leased)
 		sl->line = 0;
 
+#if 1 //LGE_RIL_RECOVERY
 	rindrv_count++;
 	printk("%s - line : %d - rindrv_count = %d\n", __FUNCTION__, __LINE__, rindrv_count);
+#endif
 }
 
 /* Perform I/O control on an active RIN channel. */

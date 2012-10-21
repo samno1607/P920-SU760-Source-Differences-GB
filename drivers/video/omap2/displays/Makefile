@@ -10,3 +10,4 @@ obj-$(CONFIG_PANEL_NEC) += panel-nec.o
 obj-$(CONFIG_PANEL_HUB) += panel-hub.o
 obj-$(CONFIG_PANEL_SIL9022) += panel_sil9022.o
 obj-$(CONFIG_PANEL_COSMO) += panel-cosmo.o
+obj-$(CONFIG_PANEL_LH430WV4_SD02) += panel-lh430wv4-sd02.o

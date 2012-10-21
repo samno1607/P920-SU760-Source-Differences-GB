@@ -3,13 +3,11 @@
 
 #define	MAIN_LCD	0
 
-
 #define LCD_LDO_EN			56
 #define LCD_ID		35
 #define LCD_RESET_N		34
 #define RGB_CVT_EN	126
 #define LCD_CVT_RESET_N	181
-
 
 struct heaven_lcd_platform_data {
 /* TODO: add field..*/

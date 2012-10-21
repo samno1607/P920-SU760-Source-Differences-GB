@@ -758,6 +758,7 @@ int omap_mcbsp_set_io_type(unsigned int id, omap_mcbsp_io_type_t io_type)
 }
 EXPORT_SYMBOL(omap_mcbsp_set_io_type);
 
+// LGE LAB4 CH.PARK@LGE.COM 20110116 MCBSP_TX_RECOVERY
 int omap_mcbsp_recover_tx_underflow(unsigned int id){
 	struct omap_mcbsp *mcbsp;
 	unsigned int irq_status;

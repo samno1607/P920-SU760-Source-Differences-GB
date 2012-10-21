@@ -26,7 +26,9 @@
 #include <linux/sched.h>
 #include <linux/uaccess.h>
 
+//alexfed begin: 20101125 avoild kmalloc/kfree compiling error
 #include <linux/slab.h>
+//alexfed end: 20101125 avoild kmalloc/kfree compiling error
 
 #include "lge_mtc_eta.h"
 

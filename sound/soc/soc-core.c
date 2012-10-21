@@ -57,9 +57,7 @@ static int snd_soc_register_card(struct snd_soc_card *card);
 static int snd_soc_unregister_card(struct snd_soc_card *card);
 static int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num);
 
-
 static int s_bsuspend = 0;
-
 static int s_partial_suspend = 0;	
 /*
  * This is a timeout to do a DAPM powerdown after a stream is closed().
@@ -789,6 +787,16 @@ int snd_soc_pcm_close(struct snd_pcm_substream *substream)
 	codec_dai->active--;
 	codec->active--;
 	
+#if 0
+	if (rtd->dai_link->no_pcm)
+	{
+		rtd->be_active--;
+
+		if( rtd->be_active )	
+			goto out;
+	}
+#endif	
+
 	/* Are we the backend and already enabled */
 	if (rtd->dai_link->no_pcm) {
 		if (--rtd->be_active)
@@ -815,6 +823,11 @@ int snd_soc_pcm_close(struct snd_pcm_substream *substream)
 	cpu_dai->runtime = NULL;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		if (rtd->dai_link->dynamic)
+			snd_soc_dapm_stream_event(rtd, SNDRV_PCM_STREAM_PLAYBACK,
+					cpu_dai->driver->playback.stream_name,
+					SND_SOC_DAPM_STREAM_STOP);
+
 		/* start delayed pop wq here for playback streams */
 		codec_dai->pop_wait = 1;
 		schedule_delayed_work(&rtd->delayed_work,
@@ -1163,7 +1176,6 @@ static int soc_suspend(struct device *dev)
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 	int i;
 
-
 	struct snd_pcm_substream *playback_modem = snd_soc_get_dai_substream(card, "(Backend) MODEM-EXT"/*OMAP_ABE_BE_MM_EXT1*/, 0);
 	struct snd_soc_pcm_runtime *modem_rtd = (playback_modem ? playback_modem->private_data : 0);
 
@@ -1178,21 +1190,17 @@ static int soc_suspend(struct device *dev)
 		return 0;
 	}
 
-
-
+#if 1
 	for (i = 0; i < card->num_rtd; i++) {
 		struct snd_soc_dai *dai = card->rtd[i].codec_dai;
 		struct snd_soc_dai_driver *drv = dai->driver;
 
-		printk(KERN_ERR "card->rtd[%d].dai_link->name : %s\n", i, card->rtd[i].dai_link->name);
-		
 		if( card->rtd[i].dai_link->name && strcmp(card->rtd[i].dai_link->name, "SDP4430 Media Capture") == 0 ){
 			struct snd_soc_pcm_runtime *rtd;
 			int idx = 0;
 
 			for( idx = 0 ; idx < card->rtd[i].num_be[SNDRV_PCM_STREAM_CAPTURE] ; idx++ ){
 				rtd = card->rtd[i].be_rtd[idx][SNDRV_PCM_STREAM_CAPTURE];
-				printk(KERN_ERR "rtd->codec_dai : %s\n", i, rtd->codec_dai->name);
 				if( rtd->codec_dai && rtd->codec_dai->capture_active ){
 					s_partial_suspend = 1;
 					break;
@@ -1200,7 +1208,7 @@ static int soc_suspend(struct device *dev)
 			}
 		}
 	}
-
+#endif
 
 	/* If the initialization of this soc device failed, there is no codec
 	 * associated with it. Just bail out in this case.
@@ -1441,7 +1449,6 @@ static int soc_resume(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 	int i;
-
 
 	if( s_bsuspend == 1 ) return 0;
 	
@@ -2088,12 +2095,16 @@ static int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 
 	/* setup any hostless PCMs - i.e. no host IO is performed */
 	if (rtd->dai_link->no_host_mode) {
-		substream[SNDRV_PCM_STREAM_PLAYBACK]->hw_no_buffer = 1;
-		substream[SNDRV_PCM_STREAM_CAPTURE]->hw_no_buffer = 1;
-		snd_soc_set_runtime_hwparams(substream[SNDRV_PCM_STREAM_PLAYBACK],
+		if (substream[SNDRV_PCM_STREAM_PLAYBACK]) {
+			substream[SNDRV_PCM_STREAM_PLAYBACK]->hw_no_buffer = 1;
+			snd_soc_set_runtime_hwparams(substream[SNDRV_PCM_STREAM_PLAYBACK],
 				&no_host_hardware);
-		snd_soc_set_runtime_hwparams(substream[SNDRV_PCM_STREAM_CAPTURE],
+		}
+		if (substream[SNDRV_PCM_STREAM_CAPTURE]) {
+			substream[SNDRV_PCM_STREAM_CAPTURE]->hw_no_buffer = 1;
+			snd_soc_set_runtime_hwparams(substream[SNDRV_PCM_STREAM_CAPTURE],
 				&no_host_hardware);
+		}
 	}
 
 	/* ASoC PCM operations */
@@ -2406,7 +2417,6 @@ int snd_soc_info_enum_double(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_info *uinfo)
 {
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-
 	int target_size = sizeof(uinfo->value.enumerated.name);
 	int src_size = 0;
 
@@ -2416,7 +2426,6 @@ int snd_soc_info_enum_double(struct snd_kcontrol *kcontrol,
 
 	if (uinfo->value.enumerated.item > e->max - 1)
 		uinfo->value.enumerated.item = e->max - 1;
-
 
 	src_size = e->texts[uinfo->value.enumerated.item] ? strlen(e->texts[uinfo->value.enumerated.item]) : 0; 
 
@@ -2578,7 +2587,6 @@ int snd_soc_info_enum_ext(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_info *uinfo)
 {
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-
 	int target_size = sizeof(uinfo->value.enumerated.name);
 	int src_size = 0;
 	
@@ -2588,7 +2596,6 @@ int snd_soc_info_enum_ext(struct snd_kcontrol *kcontrol,
 
 	if (uinfo->value.enumerated.item > e->max - 1)
 		uinfo->value.enumerated.item = e->max - 1;
-
 
 	src_size = e->texts[uinfo->value.enumerated.item] ? strlen(e->texts[uinfo->value.enumerated.item]) : 0; 
 
@@ -3314,13 +3321,11 @@ static int snd_soc_unregister_card(struct snd_soc_card *card)
  */
 static inline char *fmt_single_name(struct device *dev, int *id)
 {
-
 	char *found, name[NAME_SIZE+1];
 	int id1, id2;
 
 	if (dev_name(dev) == NULL)
 		return NULL;
-
 
 	memset(name, 0, NAME_SIZE+1);
 	

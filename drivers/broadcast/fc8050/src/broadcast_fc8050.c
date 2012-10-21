@@ -204,7 +204,6 @@ int tdmb_fc8050_power_off(void)
 
 int tdmb_fc8050_select_antenna(unsigned int sel)
 {
-//2011-1-4 sangyoun.han {
 /*
 	if(LGE_BROADCAST_TDMB_ANT_TYPE_INTENNA == sel)
 	{
@@ -219,7 +218,6 @@ int tdmb_fc8050_select_antenna(unsigned int sel)
 		return FALSE;
 	}
 */
-//2011-1-4 sangyoun.han }
 	return TRUE;
 }
 

@@ -69,7 +69,81 @@
 #define GPS_EN_GPIO -1
 #endif
 
+
+/* >TI ST BT Changes*/
+#include <linux/skbuff.h>
+#include <linux/ti_wilink_st.h>
+#define BLUETOOTH_UART_DEV_NAME "/dev/ttyO1"
+/* <TI ST BT Changes*/
+
+
+
 static int conn_gpios[] = { BT_EN_GPIO, FM_EN_GPIO, GPS_EN_GPIO };
+
+/* >TI ST BT Changes*/
+static unsigned long retry_suspend;
+int plat_kim_suspend(struct platform_device *pdev, pm_message_t state)
+{
+#if 0	
+struct kim_data_s *kim_gdata;
+	struct st_data_s *core_data;
+	kim_gdata = dev_get_drvdata(&pdev->dev);
+	core_data = kim_gdata->core_data;
+	 if (st_ll_getstate(core_data) != ST_LL_INVALID) {
+		 /*Prevent suspend until sleep indication from chip*/
+		   while(st_ll_getstate(core_data) != ST_LL_ASLEEP &&
+				   (retry_suspend++ < 5)) {
+			   return -1;
+		   }
+	 }
+#endif
+	return 0;
+}
+int plat_kim_resume(struct platform_device *pdev)
+{
+	retry_suspend = 0;
+	return 0;
+}
+/* wl128x BT, FM, GPS connectivity chip */
+struct ti_st_plat_data wilink_pdata = {
+	.nshutdown_gpio = 166,
+	.dev_name = BLUETOOTH_UART_DEV_NAME,
+	.flow_cntrl = 1,
+	.baud_rate = 3000000,
+	.suspend = plat_kim_suspend,
+	.resume = plat_kim_resume,
+};
+static struct platform_device wl128x_device = {
+	.name		= "kim",
+	.id 	= -1,
+	.dev.platform_data = &wilink_pdata,
+};
+static struct platform_device btwilink_device = {
+	.name = "btwilink",
+	.id = -1,
+};
+
+#ifdef CONFIG_TI_ST
+static bool is_bt_active(void)
+{
+	struct platform_device	*pdev;
+	struct kim_data_s		*kim_gdata;
+	pr_info(" is_bt_active()\n");
+
+	pdev = &wl128x_device;
+	kim_gdata = dev_get_drvdata(&pdev->dev);
+	if (st_ll_getstate(kim_gdata->core_data) != ST_LL_ASLEEP &&
+			st_ll_getstate(kim_gdata->core_data) != ST_LL_INVALID)
+		return true;
+	else
+		return false;
+}
+#else
+#define is_bt_active NULL
+#endif
+/* < TI ST BT Changes*/ 
+
+
 
 static struct platform_device conn_device = {
 	.name = "kim",		/* named after init manager for ST */
@@ -78,7 +152,11 @@ static struct platform_device conn_device = {
 };
 
 static struct platform_device *conn_plat_devices[] __initdata = {
-	&conn_device,
+//	&conn_device,
+/* > TI ST BT Changes*/
+	&wl128x_device,
+	&btwilink_device
+/* < TI ST BT Changes*/
 };
 
 static void config_bt_mux_gpio(void)

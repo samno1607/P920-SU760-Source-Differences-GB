@@ -495,9 +495,17 @@ void omap_prcm_arch_reset(char mode, const char *cmd)
 
 printk("dennis -- %s,%d -- reset resource : %08x\n", __FUNCTION__, __LINE__, omap_prcm_get_reset_sources());
 
+// TEMPORARY BLOCKED!!
+// Applying Cold reset instead  Warm reset, not working on ES2.0, Rev.B
+#if	0
+	if (cpu_is_omap44xx())
+		prm_set_mod_reg_bits(OMAP4430_RST_GLOBAL_WARM_SW_MASK,
+				     prcm_offs, OMAP4_RM_RSTCTRL);
+#else
 	if (cpu_is_omap44xx())
 		prm_set_mod_reg_bits(OMAP4430_RST_GLOBAL_COLD_SW_MASK,
 				     prcm_offs, OMAP4_RM_RSTCTRL);
+#endif
 }
 
 static inline u32 __omap_prcm_read(void __iomem *base, s16 module, u16 reg)

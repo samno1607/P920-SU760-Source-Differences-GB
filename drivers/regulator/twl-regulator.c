@@ -171,7 +171,6 @@ static int twlreg_disable(struct regulator_dev *rdev)
 	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_GRP, grp);
 }
 
-//FW KIMBYUNGCHUL 20110414 [START]	just for vmmc plz~
 #ifdef CONFIG_MACH_LGE_MMC_REFRESH	
 
 
@@ -317,7 +316,6 @@ int twlreg_refresh(struct regulator_dev *rdev)
 #endif
 
 #endif	//CONFIG_MACH_LGE_MMC_REFRESH
-//FW KIMBYUNGCHUL 20110414 [END]
 static int twlreg_get_status(struct regulator_dev *rdev)
 {
 	int	state = twlreg_grp(rdev);

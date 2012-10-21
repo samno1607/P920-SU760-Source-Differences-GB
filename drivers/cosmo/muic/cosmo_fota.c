@@ -45,6 +45,7 @@
 #include <linux/workqueue.h>	/* INIT_WORK() */
 #include <linux/wakelock.h>
 #include <linux/spi/ifx_n721_spi.h>
+//TIME INFORMATION ADD. 2011-05-02 eunae.kim
 #include <linux/rtc.h>
 
 #define COSMO_FOTA_TEST_PROC_FILE "driver/fota"
@@ -114,34 +115,45 @@ void ifx_fota_reset(void)
 {
 	int status;
 
-	printk("%s: CP Reset \n", __func__);
+	printk("%s: CP Reset IN\n", __func__);
 
 	gpio_request(MODEM_GPIO_PWRON, "ifx pwron");
 	gpio_direction_output(MODEM_GPIO_PWRON, 0);
 	udelay(100);
 	gpio_set_value(MODEM_GPIO_PWRON, 0);
 	status = gpio_get_value(MODEM_GPIO_PWRON);
-	printk("ifx_power_low- [CP POWER]: pin %d\n",status);
-	mdelay(200);
-	gpio_set_value(MODEM_GPIO_PWRON, 1);
-	status = gpio_get_value(MODEM_GPIO_PWRON);
-	printk("ifx_power_high- [CP POWER]: pin %d\n",status);
-	mdelay(200);
+	printk("%s: MODEM_GPIO_PWRON low- [CP POWER]: pin %d\n", __func__, status);
 
+	mdelay(500); // 500mS delay
+	
 	gpio_direction_output(MODEM_GPIO_PWRON_SW, 0);  //GPIO_3 OE
 	udelay(100);
 	gpio_set_value(MODEM_GPIO_PWRON_SW, 0);
-	mdelay(200);  //wait 10ms
+	status = gpio_get_value(MODEM_GPIO_PWRON_SW);
+	printk("%s: MODEM_GPIO_PWRON_SW low- [CP POWER]: pin %d\n", __func__, status);
+	
+	mdelay(500); // 500mS delay
+
+	gpio_set_value(MODEM_GPIO_PWRON, 1);
+	status = gpio_get_value(MODEM_GPIO_PWRON);
+	printk("%s: MODEM_GPIO_PWRON high+ [CP POWER]: pin %d\n", __func__, status);
+
+	mdelay(100); // 1000mS delay
+
 	gpio_set_value(MODEM_GPIO_PWRON_SW, 1);
-	mdelay(200);
+	status = gpio_get_value(MODEM_GPIO_PWRON_SW);
+	printk("%s: MODEM_GPIO_PWRON_SW high+ [CP POWER]: pin %d\n", __func__, status);
 
 	usif_switch_ctrl(0);
+
+	printk("%s: CP Reset OUT\n", __func__);
 }
 
 void ifx_pmu_reset(void)
 {
 	int status;
 
+// TIME INFORMATION ADD. 2011-05-02 eunae.kim
         struct timespec ts;
         struct rtc_time tm;
         getnstimeofday(&ts);
@@ -160,13 +172,14 @@ void ifx_pmu_reset(void)
 	gpio_set_value(MODEM_GPIO_PWRON, 1);
 	status = gpio_get_value(MODEM_GPIO_PWRON);
 	printk("ifx_power_high- [CP POWER]: pin %d\n",status);
-
+//cheolgwak 2011 02 01
 gpio_direction_output(MODEM_GPIO_PWRON_SW, 0);  //GPIO_3 OE
 udelay(100);
 gpio_set_value(MODEM_GPIO_PWRON_SW, 0);
 mdelay(200);  //wait 10ms
 gpio_set_value(MODEM_GPIO_PWRON_SW, 1);
 mdelay(200);
+//cheolgwak 2011 02 01
 }
 
 static ssize_t fota_test_proc_read(struct file *filp, char *buf, size_t len, loff_t *offset)

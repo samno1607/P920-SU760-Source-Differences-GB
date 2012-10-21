@@ -119,13 +119,11 @@
 #define TWL6040_LPLLFIN			0x08
 #define TWL6040_HPLLSEL			0x10
 
-
 /* AMICBCTL (0x0a) fields */
 #define TWL6040_HMICENA			0x01
 #define TWL6040_HMICBSLP		0x02
 #define TWL6040_HMICBPD			0x04
 #define TWL6040_HMICBSCDIS		0x08
-
 
 /* HSLCTL (0x10) fields */
 
@@ -147,10 +145,8 @@
 #define TWL6040_VIBCTRLRP		0x04
 #define TWL6040_VIBENAR			0x01
 
-
 /* HKCTL1 (0x1C) fields */
 #define TWL6040_HKEN					0x01
-
 
 /* ACCCTL (0x2D) fields */
 

@@ -522,7 +522,7 @@ static int dss_mgr_wait_for_vsync(struct omap_overlay_manager *mgr)
 	if (mgr->device->state != OMAP_DSS_DISPLAY_ACTIVE)
 		return 0;
 
-
+#if 1
 	if (mgr->device->type == OMAP_DISPLAY_TYPE_VENC)
 		irq = DISPC_IRQ_EVSYNC_ODD;
 	else if (mgr->device->type == OMAP_DISPLAY_TYPE_HDMI)
@@ -540,6 +540,9 @@ static int dss_mgr_wait_for_vsync(struct omap_overlay_manager *mgr)
 			&& (mgr->device->channel == OMAP_DSS_CHANNEL_LCD2))
 			irq = DISPC_IRQ_VSYNC2;
 	return omap_dispc_wait_for_irq_interruptible_timeout(irq, timeout);
+#else
+	return 0;
+#endif
 
 }
 
@@ -975,7 +978,6 @@ static int configure_dispc(void)
 			if (oc->manual_update && !mc->do_manual_update)
 				continue;
 
-
 #ifdef CONFIG_MACH_LGE_COSMOPOLITAN
 			if(i)
 #endif
@@ -1324,7 +1326,6 @@ static int omap_dss_mgr_apply(struct omap_overlay_manager *mgr)
 	struct writeback_cache_data *wbc;
 	DSSDBG("omap_dss_mgr_apply(%s)\n", mgr->name);
 
-	
 	#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
 		if(mgr->device && mgr->device->driver && mgr->device->driver->enable_s3d) {
 			enum omap_dss_overlay_s3d_type s3d_type = omap_dss_overlay_s3d_none;
@@ -1362,7 +1363,6 @@ static int omap_dss_mgr_apply(struct omap_overlay_manager *mgr)
 			}
 		}
 	#endif
-	
 
 	if (!dss_get_mainclk_state()) {
 		DSSERR("mainclk disabled while trying"
@@ -1715,7 +1715,6 @@ int omap_dss_wb_apply(struct omap_overlay_manager *mgr, struct omap_writeback *w
 					&oc->burst_size, &oc->fifo_low,
 					&oc->fifo_high);
 	}
-
 
 #if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
 	if (!dss_get_mainclk_state()) {

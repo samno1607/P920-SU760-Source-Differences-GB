@@ -8,14 +8,6 @@
  * kind, whether express or implied.
  */
 
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//
-// Important Notice
-//		In LGE Cosmo, this file is replaced by omap_vout_cosmo.h
-//		If there is important patches, apply patches to omap_vout_cosmo.h
-//
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 #ifndef OMAP_VOUTDEF_H
 #define OMAP_VOUTDEF_H
 

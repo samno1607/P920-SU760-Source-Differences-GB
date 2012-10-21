@@ -1,4 +1,3 @@
-
 #include <linux/fs.h>
 #include <linux/syscalls.h>
 
@@ -131,4 +130,3 @@ module_init(lge_nvdata_init);
 module_exit(lge_nvdata_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("lge.com");
-

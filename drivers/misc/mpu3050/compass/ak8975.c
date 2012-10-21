@@ -167,6 +167,7 @@ struct ext_slave_descr ak8975_descr = {
 	/*.resume           = */ ak8975_resume,
 	/*.read             = */ ak8975_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "ak8975",
 	/*.type             = */ EXT_SLAVE_TYPE_COMPASS,
 	/*.id               = */ COMPASS_ID_AKM,

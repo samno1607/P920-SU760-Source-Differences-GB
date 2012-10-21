@@ -719,12 +719,10 @@ int check_fb_var(struct fb_info *fbi, struct fb_var_screeninfo *var)
 			var->xres, var->yres,
 			var->xres_virtual, var->yres_virtual);
 
-	
 	if(display == NULL) {
 		return -EINVAL;
 	}
 
-	
 	if (display && display->driver->get_dimension) {
 		display->driver->get_dimension(display, &var->width, &var->height);
 	} else {
@@ -776,6 +774,35 @@ static int omapfb_open(struct fb_info *fbi, int user)
 
 static int omapfb_release(struct fb_info *fbi, int user)
 {
+#if 0
+	struct omapfb_info *ofbi = FB2OFB(fbi);
+	struct omapfb2_device *fbdev = ofbi->fbdev;
+	struct omap_dss_device *display = fb2display(fbi);
+
+	DBG("Closing fb with plane index %d\n", ofbi->id);
+
+	omapfb_lock(fbdev);
+
+	if (display && display->get_update_mode && display->update) {
+		/* XXX this update should be removed, I think. But it's
+		 * good for debugging */
+		if (display->get_update_mode(display) ==
+				OMAP_DSS_UPDATE_MANUAL) {
+			u16 w, h;
+
+			if (display->sync)
+				display->sync(display);
+
+			display->get_resolution(display, &w, &h);
+			display->update(display, 0, 0, w, h);
+		}
+	}
+
+	if (display && display->sync)
+		display->sync(display);
+
+	omapfb_unlock(fbdev);
+#endif
 	return 0;
 }
 
@@ -1358,6 +1385,19 @@ static int omapfb_blank(int blank, struct fb_info *fbi)
 	case FB_BLANK_POWERDOWN:
 		if (display->state != OMAP_DSS_DISPLAY_ACTIVE)
 			goto exit;
+/* block temp code
+#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
+		struct fb_fillrect rc;
+		rc.dx = 0;
+		rc.dy = 0;
+		rc.width = fbi->var.xres;
+		rc.height = fbi->var.yres;
+		rc.color = 0x00000000;
+		rc.rop = ROP_COPY;
+
+		cfb_fillrect(fbi,&rc);
+#endif
+*/
 		if (display->driver->suspend)
 			r = display->driver->suspend(display);
 
@@ -1379,6 +1419,17 @@ exit:
 
 	return r;
 }
+
+#if 0
+/* XXX fb_read and fb_write are needed for VRFB */
+ssize_t omapfb_write(struct fb_info *info, const char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	DBG("omapfb_write %d, %lu\n", count, (unsigned long)*ppos);
+	/* XXX needed for VRFB */
+	return count;
+}
+#endif
 
 static struct fb_ops omapfb_ops = {
 	.owner          = THIS_MODULE,
@@ -2094,11 +2145,25 @@ static int omapfb_notifier(struct notifier_block *nb,
 	/* notify fbs (with overlays) on this device */
 	for (i = 0; i < fbdev->num_fbs; i++) {
 		struct fb_info *fbi = fbdev->fbs[i];
+#if 0
+		int j;
+		struct omapfb_info *ofbi = FB2OFB(fbi);
+		/* keep the largest status if multiple fbs are affected */
 
+		for (j = 0; j < ofbi->num_overlays; j++) {
+			if (ofbi->overlays[j]->manager->device == dssdev) {
+				r = omapfb_notify_fb(fbi, evt, dssdev);
+				res = max(res, r);
+				break;
+			}
+		}
+#else
                 if(fbdev->displays[i]==dssdev){                        
 			r = omapfb_notify_fb(fbi, evt, dssdev);                        
 			res = max(res, r);
 		}
+#endif
+
 	}
 
 	return res;

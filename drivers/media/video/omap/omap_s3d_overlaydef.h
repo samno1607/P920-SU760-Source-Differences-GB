@@ -8,14 +8,6 @@
  * kind, whether express or implied.
  */
 
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-//
-// Important Notice
-//		In LGE Cosmo, this file is replaced by omap_vout_cosmo.h
-//		If there is important patches, apply patches to omap_vout_cosmo.h
-//
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 #ifndef OMAP_S3D_VOUTDEF_H
 #define OMAP_S3D_VOUTDEF_H
 
@@ -284,13 +276,11 @@ struct s3d_ovl_device {
 	bool override_s3d_disp;
 	struct s3d_disp_info s3d_disp_info;
 
-	
 	bool wb_buf_proc_idx;
 	bool wb_buf_disp_idx;
 
 	bool wb_start_kicking;
 	bool wb_avoid_kick;
-	
 
 	/* workqueue for manual update */
 	struct workqueue_struct *workqueue;

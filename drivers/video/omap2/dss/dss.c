@@ -161,8 +161,13 @@ int dss_mainclk_enable()
 		else
 			dss_opt_clock_disable();
 
+#if 0
+		if (!ret)
+			dss.mainclk_state = true;
+#else	/* JamesLee_OCT26 */
 		if (ret>=0)
 			dss.mainclk_state = true;
+#endif
 	} else {
 		return -EBUSY;
 	}
@@ -301,6 +306,7 @@ void dss_dump_clocks(struct seq_file *s)
 
 void dss_dump_regs1(void)
 {
+//#define DUMPREG(r) seq_printf(s, "%-35s %08x\n", #r, dss_read_reg(r))
 #define DUMPREG(r) printk("%-35s %08x\n", #r, dss_read_reg(r))
 
 	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
@@ -367,7 +373,14 @@ void dss_select_dispc_clk_source(enum omap_dsi_index ix,
 			clk_src == DSS_SRC_PLL2_CLK1)
 		dsi_wait_pll_dispc_active(ix);
 
+#if 0
+	if (!cpu_is_omap44xx())
+		REG_FLD_MOD(DSS_CONTROL, b, 0, 0);	/* DISPC_CLK_SWITCH */
+	else
+		REG_FLD_MOD(DSS_CONTROL, b, 9, 8);	/* FCK_CLK_SWITCH */
+#else	/* JamesLee_OCT26 */
 	REG_FLD_MOD(DSS_CONTROL, b, 9, 8);	/* FCK_CLK_SWITCH */
+#endif
 
 	dss.dispc_clk_source = clk_src;
 }
@@ -718,7 +731,6 @@ int dss_init(struct platform_device *pdev)
 		dss_mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	else
 		dss_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-
 
 	if(!dss_mem) return -ENOMEM;
 	

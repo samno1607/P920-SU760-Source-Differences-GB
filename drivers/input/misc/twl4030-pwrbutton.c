@@ -33,6 +33,7 @@
 
 #define PWR_PWRON_IRQ (1 << 0)
 
+//#define STS_HW_CONDITIONS 0xf
 #define STS_HW_CONDITIONS 0x2
 
 struct twl4030_pwrbutton_data {

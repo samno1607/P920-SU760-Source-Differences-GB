@@ -41,28 +41,28 @@
 #include <linux/completion.h>
 #include <linux/spi/spi.h>
 #include <linux/workqueue.h>
-
 #include <linux/delay.h>
-
 
 #include <linux/spi/ifx_n721_spi.h>
 
 #include <linux/cosmo/charger_rt9524.h>
 
-
 #include <plat/lge_err_handler.h>
 #include <plat/lge_nvdata_handler.h>
+//#define LGE_DUMP_SPI_BUFFER
 
-
+//#define LGE_VT_DATA_DUMP 
 #include <linux/input.h>
 
 #include <linux/rtc.h>
 
 
+// CHEOLGWAK  2011-2-28 
 #ifndef ENABLE_CP_CRASH_RESET
 #define EVENT_KEY KEY_F24 //194, Need to be changed
 #define EVENT_HARD_RESET_KEY	195	//this key number is not used in input.h
 #endif
+// CHEOLGWAK  2011-2-28 
 
 #if defined(LGE_VT_DATA_DUMP)
 #define VT_MUX12_DEBUG
@@ -92,7 +92,12 @@ struct ifx_spi_data {
 	unsigned		users;
         unsigned int		throttle;
         struct work_struct      ifx_work;
+#if 1 
 	struct workqueue_struct *ifx_wq;
+#else
+        struct work_queue_struct *ifx_wq;
+#endif
+// hgahn
 int ifx_spi_lock;
 		
 };
@@ -120,9 +125,7 @@ struct tty_driver 	*ifx_spi_tty_driver;
 unsigned long		minors[IFX_N_SPI_MINORS / BITS_PER_LONG];
 unsigned int		ifx_master_initiated_transfer = 0;
 unsigned int		ifx_spi_count;
-
 unsigned int		ifx_ril_is_modem_alive = 1;
-
 unsigned int		ifx_sender_buf_size;
 unsigned int		ifx_receiver_buf_size;
 unsigned int		ifx_current_frame_size;
@@ -149,16 +152,13 @@ static void ifx_spi_handle_work(struct work_struct *work);
 unsigned char rx_dummy[]={0xff,0xff,0xff,0xff};
 
 
-
 static struct work_struct CP_CRASH_INT_wq;
 static struct delayed_work	cp_crash_int_delayed_wq;
 
 static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq);
 static irqreturn_t CP_CRASH_interrupt_handler(s32 irq, void *data);
 
-
 #ifndef ENABLE_CP_CRASH_RESET
-
 static struct input_dev *in_dev = NULL;
 #endif
 
@@ -183,6 +183,7 @@ ifx_spi_open(struct tty_struct *tty, struct file *filp)
 	spi_data->ifx_tty = tty;
 	tty->driver_data = spi_data;
 	
+// hgahn
 	spi_data->ifx_spi_lock =0;
 	
 	ifx_spi_buffer_initialization();
@@ -196,6 +197,9 @@ ifx_spi_open(struct tty_struct *tty, struct file *filp)
 static void 
 ifx_spi_close(struct tty_struct *tty, struct file *filp)
 {  
+	//struct ifx_spi_data *spi_data = (struct ifx_spi_data *)tty->driver_data;
+	//spi_data->ifx_tty = NULL;
+	//tty->driver_data = NULL;
 }
 
 /*
@@ -247,12 +251,38 @@ static void dump_spi_wr_buffer(const unsigned char *buf, int count)
   static unsigned int spi_write_cnt = 0;
   char dump_buf_str[(COL_SIZE+1)*2];
 
+#if 0
+  if(mux_12_open == 0)		
+   	return;
+#endif
+
+  #if 0  
+    /* Print all SPI data */
+    if ((buf != NULL) && (count >= 160))
+    {        
+	int j = 0;        
+	char *cur_str = dump_buf_str;        
+	unsigned char ch;        
+
+	while((j < COL_SIZE) && (j  < count))        
+	{            
+            ch = buf[j];
+            sprintf(cur_str, "%0.2x", ch);			
+            cur_str = cur_str+2;
+            j++;        
+        }
+	*cur_str = 0;       
+	printk("SPI WR[%d] [%s]\n", spi_write_cnt, dump_buf_str);                            	
+	spi_write_cnt++;
+    }
+  #else
     /* Print only SPI writing count */
     if ((buf != NULL) && (count >= 160))
     {
          printk("IFX OK[%d], MUX[%d]\n", spi_write_cnt, mux_written_counter);         
 	 spi_write_cnt++;
     }
+  #endif	
 }
 
 
@@ -320,10 +350,11 @@ ifx_spi_write(struct tty_struct *tty, const unsigned char *buf, int count)
 #elif defined(LGE_VT_DATA_DUMP)
     if (count == 167) // 167 means 160(MUX data) + 7 (DLC Frame Header + Tails)
     {
-       ;
+       // dump_spi_wr_buffer(buf, count);
     }
 #endif
 
+// hgahn
 	if(spi_data->ifx_spi_lock)
 		return ifx_ret_count;
 
@@ -341,7 +372,11 @@ ifx_spi_write(struct tty_struct *tty, const unsigned char *buf, int count)
 	ifx_spi_buf = buf;
 	ifx_spi_count = count;
 
-
+	/* original code
+	ifx_spi_set_mrdy_signal(1);	
+		
+	wait_for_completion(&spi_data->ifx_read_write_completion);
+	*/
 	{
 		int i, max_retry_count=8;
 		unsigned long timeout=HZ;
@@ -358,8 +393,8 @@ ifx_spi_write(struct tty_struct *tty, const unsigned char *buf, int count)
 
 			if (rc == 0) {		// timeout expired, retry
 				printk("***** unable to detect SREADY within %lu, RETRY (counter=%d) *****\n", timeout, i+1);
+				// lower master ready
 				ifx_spi_set_mrdy_signal(0);
-
 
 				if(i == (max_retry_count-1))
 				{
@@ -368,23 +403,19 @@ ifx_spi_write(struct tty_struct *tty, const unsigned char *buf, int count)
 						ifx_ril_is_modem_alive = 0;
 					}
 				}
-
 				// retry after delay
 				udelay(100);		// 20 u sec delay
 			} else {			// success or failure
 				//printk("wait_for_completion_timeout timeout=%ld\n", timeout);
-
 				if(!ifx_ril_is_modem_alive)
 				{
 					set_modem_alive(1);
 					ifx_ril_is_modem_alive = 1;
 				}
-
 				break;
 			}
 		}
 	}
-
 
 	init_completion(&spi_data->ifx_read_write_completion);
 	return ifx_ret_count; /* Number of bytes sent to the device */
@@ -398,6 +429,38 @@ ifx_spi_write_room(struct tty_struct *tty)
 	return 2048;
 }
 
+
+/* ################################################################################################################ */
+/* These two functions are to be used in future to implement flow control (RTS & CTS)*/
+/*static void 
+ifx_spi_throttle(struct tty_struct *tty)
+{
+	unsigned int flags;
+	struct ifx_spi_data *spi_data = (struct ifx_spi_data *)tty->driver_data;
+	spi_data->ifx_tty = tty;
+	spin_lock_irqsave(&spi_data->spi_lock, flags);
+	spi_data->throttle = 1;
+	spin_unlock_irqrestore(&spi_data->spi_lock, flags);
+}
+
+static void 
+ifx_spi_unthrottle(struct tty_struct *tty)
+{
+	unsigned int flags;
+	struct ifx_spi_data *spi_data = (struct ifx_spi_data *)tty->driver_data;
+	spi_data->ifx_tty = tty;
+	spin_lock_irqsave(&spi_data->spi_lock, flags);
+	spi_data->throttle = 0;
+	if( ifx_rx_buffer != NULL ){
+	     tty_insert_flip_string(spi_data->ifx_tty, ifx_rx_buffer, valid_buffer_count);
+	}
+	spin_unlock_irqrestore(&spi_data->spi_lock, flags);  
+}*/
+/* ################################################################################################################ */
+
+/* End of IFX SPI Operations */
+
+/* ################################################################################################################ */
 
 /* TTY - SPI driver Operations */
 
@@ -420,9 +483,7 @@ ifx_spi_probe(struct spi_device *spi)
         status = ifx_spi_allocate_frame_memory(IFX_SPI_MAX_BUF_SIZE + IFX_SPI_HEADER_SIZE);
         if(status != 0){
 		printk("File: ifx_n721_spi.c\tFunction: int ifx_spi_probe\tFailed to allocate memory for buffers\n");
-		
 		kfree(spi_data);
-		
 		return -ENOMEM;
         }
 	
@@ -446,6 +507,7 @@ ifx_spi_probe(struct spi_device *spi)
 			printk("Failed to setup SPI \n");
         }             
 
+// hgahn
 	spi_data->ifx_spi_lock =1;
 
 	/* Enable SRDY Interrupt request - If the SRDY signal is high then ifx_spi_handle_srdy_irq() is called */
@@ -467,8 +529,8 @@ ifx_spi_probe(struct spi_device *spi)
 	else{
 		gspi_data = spi_data;
 	}
+        /////////////////////////////////////////////////////////////////////////////////////////////
         enable_irq_wake(spi->irq);
-
 	ret = gpio_request(MODEM_SEND, "MODEM_SEND");
 	if (ret < 0) {
 		printk(KERN_ERR "%s: Failed to request GPIO_%d for MODEM_SEND\n", __func__, MODEM_SEND);
@@ -476,6 +538,7 @@ ifx_spi_probe(struct spi_device *spi)
 	}
         gpio_direction_output(MODEM_SEND,1);
         gpio_set_value(MODEM_SEND,1);
+////////////////////////////////////////////////////////////////////////////////////////////
 
 
 	#define CP_CRASH_INT_N  26
@@ -497,7 +560,9 @@ ifx_spi_probe(struct spi_device *spi)
 	/* Registers MUIC work queue function */
 
 	INIT_WORK(&CP_CRASH_INT_wq, CP_CRASH_wq_func);
+// CHEOLGWAK  2011-5-14 delayed work queue
 	INIT_DELAYED_WORK(&cp_crash_int_delayed_wq, CP_CRASH_wq_func);
+// CHEOLGWAK  2011-5-14 delayed work queue
 	/* 
 	 * Set up an IRQ line and enable the involved interrupt handler.
 	 * From this point, a MUIC_INT_N can invoke muic_interrupt_handler().
@@ -511,9 +576,7 @@ ifx_spi_probe(struct spi_device *spi)
 		return -ENOSYS;
 	}
 
-
 #ifndef ENABLE_CP_CRASH_RESET
-	
 	in_dev = input_allocate_device();
 	if (!in_dev) {
 		printk("Can't allocate power button\n");
@@ -536,13 +599,13 @@ ifx_spi_probe(struct spi_device *spi)
 	return status;
 }
 
-
 static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq)
 {
 	volatile unsigned long *make_panic = 0;
 	extern void set_muic_mode(u32 mode);
 	int ret;
 	
+// CRASH TIME INFORMATION ADD. 2011-04-23 eunae.kim
 	struct timespec ts;
 	struct rtc_time tm;
 	getnstimeofday(&ts);
@@ -551,10 +614,13 @@ static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq)
 	printk(KERN_INFO "[CP CRASH IRQ] CP_CRASH_wq_func()");	
 	printk(KERN_INFO "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);	
+// CHEOLGWAK  2011-5-14 delayed work queue
 	if(gpio_get_value(CP_CRASH_INT_N)){
 
+#if 0  
+		*make_panic = 0xDEAD;	
+#endif
 		lge_store_ciq_reset(0, LGE_NVDATA_IQ_RESET_EXCEPTION);
-		
 
 		{
 			unsigned char data;
@@ -563,10 +629,10 @@ static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq)
 			lge_dynamic_nvdata_write(LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET,&data,1);
 		}
 
-		
+
 		if (lge_is_crash_dump_enabled() != 1)
 		{	
-#ifndef ENABLE_CP_CRASH_RESET
+#ifndef ENABLE_CP_CRASH_RESET	//20110301 LGE_RIL_RECOVERY
 			printk(" CP CRASH! immediate RIL/CP reset");
 			input_report_key(in_dev, EVENT_KEY, 1);
 			input_report_key(in_dev, EVENT_KEY, 0);
@@ -576,23 +642,43 @@ static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq)
 			return;
 		}
 
-	
+	//	set_muic_mode(7 /* MUIC_CP_UART */);
 		printk(KERN_INFO "[CP CRASH IRQ] launch ifx_coredump process\n");	
 
 	{
 		char* argv[] = {"/system/bin/ifx_coredump", "CP_CRASH_IRQ", NULL};
 		char *envp[] = { "HOME=/",	"PATH=/sbin:/bin:/system/bin",	NULL };	
+		//@@ret = call_usermodehelper(argv[0], argv, envp, UMH_NO_WAIT);
 		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
 		printk(KERN_INFO "[CP CRASH IRQ] launch ifx_coredump process ret:%d\n",ret);	
 	}
 
 		gpio_set_value(82, 1);
 
+#if 0
+		// LED toggle
+		int toggle = 0;
+		for(;;)
+		{
+			if(toggle == 0)
+			{
+				gpio_set_value(82, 1);
+				toggle = 1;
+			}
+			else                                 
+			{
+				gpio_set_value(82, 0);
+				toggle = 0;
+			}
+			msleep(100);
+		}
+#endif	
 	}
 	else
 	{
 		return;		
 	}
+// CHEOLGWAK  2011-5-14 delayed work queue
 }
 
 static irqreturn_t CP_CRASH_interrupt_handler(s32 irq, void *data)
@@ -604,18 +690,15 @@ static irqreturn_t CP_CRASH_interrupt_handler(s32 irq, void *data)
 }
 
 
-
 static int 
 ifx_spi_remove(struct spi_device *spi)
 {	
 	struct ifx_spi_data *spi_data;
 	spi_data = spi_get_drvdata(spi);
 
-	
 	if(spi_data == NULL){
 		return 0;
 	}
-	
 	
 	spin_lock_irq(&spi_data->spi_lock);
 	spi_data->spi = NULL;
@@ -637,7 +720,6 @@ ifx_spi_remove(struct spi_device *spi)
 static int
 ifx_spi_suspend(struct spi_device *spi)
 {
-	
     gpio_set_value(MODEM_SEND,0);
     
     return 0;
@@ -647,12 +729,13 @@ static int
 ifx_spi_resume(struct spi_device *spi)
 {
     //@@printk("modem_chk = %d \n",gpio_get_value(177));
-	
     gpio_set_value(MODEM_SEND,1);
     
     return 0;
 }
 /* End of TTY - SPI driver Operations */
+
+/* ################################################################################################################ */
 
 static struct spi_driver ifx_spi_driver = {
 	.driver = {
@@ -674,7 +757,12 @@ static const struct tty_operations ifx_spi_ops = {
     .close = ifx_spi_close,
     .write = ifx_spi_write,
     .write_room = ifx_spi_write_room,
+    //.throttle = ifx_spi_throttle,
+    //.unthrottle = ifx_spi_unthrottle,
+    //.set_termios = ifx_spi_set_termios,
 };
+
+/* ################################################################################################################ */
 
 /*
  * Intialize frame sizes as "IFX_SPI_DEFAULT_BUF_SIZE"(128) bytes for first SPI frame transfer
@@ -858,6 +946,7 @@ ifx_spi_send_and_receive_data(struct ifx_spi_data *spi_data)
 		ifx_ret_count = ifx_ret_count + ifx_valid_frame_size;
 	}
 
+	// hgahn
 	if(memcmp(rx_dummy, ifx_rx_buffer, IFX_SPI_HEADER_SIZE) ==0) {
 
 		ifx_receiver_buf_size = 0;
@@ -868,15 +957,22 @@ ifx_spi_send_and_receive_data(struct ifx_spi_data *spi_data)
 	ifx_receiver_buf_size = ifx_spi_get_header_info(&rx_valid_buf_size);
 
 
+// hgahn
 	if((spi_data->throttle == 0) && (rx_valid_buf_size != 0) && !(spi_data->ifx_spi_lock)){
 #ifdef LGE_DUMP_SPI_BUFFER
     dump_spi_buffer("ifx_spi_send_and_receive_data()[Recev]", &(ifx_rx_buffer[4]), COL_SIZE);
 #elif defined(LGE_VT_DATA_DUMP)
+    //dump_spi_rd_buffer(&(ifx_rx_buffer[4]), rx_valid_buf_size-2); /* MUX에서의 Ctrl & Flag Byte 제거 */
 #endif
 
 		tty_insert_flip_string(spi_data->ifx_tty, ifx_rx_buffer+IFX_SPI_HEADER_SIZE, rx_valid_buf_size);
 		tty_flip_buffer_push(spi_data->ifx_tty);
 	}  
+	/*else
+  	{ 
+	handle RTS and CTS in SPI flow control
+	Reject the packet as of now 
+	}*/
 }
 
 /*
@@ -950,7 +1046,8 @@ ifx_spi_handle_work(struct work_struct *work)
 		/* It is a condition where Slave has initiated data transfer and both SRDY and MRDY are high and at the end of data transfer		
 	 	* MUX has some data to transfer. MUX initiates Master initiated transfer rising MRDY high, which will not be detected at Slave-MODEM.
 	 	* So it was required to rise MRDY high again */
-	 		udelay(100);
+	 		udelay(100);//TI JANGHAN
+	 		//udelay(10);// reduce delay for performnace
             ifx_spi_set_mrdy_signal(1);
 		}
 	}
@@ -961,7 +1058,8 @@ ifx_spi_handle_work(struct work_struct *work)
 		if(ifx_sender_buf_size == 0){
 			if(ifx_receiver_buf_size == 0){		
 				ifx_spi_set_mrdy_signal(0);
-				udelay(100);
+				udelay(100);////TI JANGHAN
+				//udelay(10);// reduce delay for performance
 				ifx_spi_buffer_initialization();
 			}
 			ifx_master_initiated_transfer = 0;
@@ -970,6 +1068,11 @@ ifx_spi_handle_work(struct work_struct *work)
 	}
 }
 
+
+/* ################################################################################################################ */
+
+
+/* ################################################################################################################ */
 
 /* Initialization Functions */
 
@@ -1041,6 +1144,7 @@ module_exit(ifx_spi_exit);
 
 /* End of Initialization Functions */
 
+/* ################################################################################################################ */
 
 MODULE_AUTHOR("Umesh Bysani and Shreekanth D.H, <bysani@ti.com> <sdh@ti.com>");
 MODULE_DESCRIPTION("IFX SPI Framing Layer");

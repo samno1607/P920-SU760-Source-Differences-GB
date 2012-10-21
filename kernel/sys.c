@@ -313,22 +313,18 @@ void kernel_restart_prepare(char *cmd)
 void kernel_restart(char *cmd)
 {
 #if CONFIG_ARCH_OMAP4
-
 	if(lge_is_force_ap_crash() == 1)
 	{
-		
 		if (lge_is_mark_cp_crash() == 1)	// ifx_coredump user process marked CP crash NV item
 		{
 			// without calling BUG();
 			twl_i2c_write_u8(0x14, 0x47, 0x06); 	// PMIC reset
 			return;
 		}
-		
 
 		BUG();
 		return;
 	}
-
 
 	if(cmd == NULL || cmd[0] != 'U')
 	{
@@ -336,7 +332,6 @@ void kernel_restart(char *cmd)
 	}
 
 	twl_i2c_write_u8(0x14, 0x47, 0x06); 
-
 #else
 	kernel_restart_prepare(cmd);
 	if (!cmd)
@@ -366,14 +361,12 @@ void kernel_halt(void)
 	twl_i2c_write_u8(TWL_MODULE_PM_MASTER, 0x07, 0x06);
 #endif
 
-   
    printk(KERN_INFO "PM: Syncing filesystems ... for kernel_halt");
    sys_sync();
    printk("done.\n");
-   
 
 	kernel_shutdown_prepare(SYSTEM_HALT);
-	disable_nonboot_cpus();					
+	disable_nonboot_cpus();			
 	sysdev_shutdown();
 	printk(KERN_EMERG "System halted.\n");
 
@@ -389,11 +382,9 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
-   
    printk(KERN_INFO "PM: Syncing filesystems ... for kernel_power_off");
    sys_sync();
    printk("done.\n");
-   
 
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
@@ -424,6 +415,8 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	int ret = 0;
 
 	/* We only trust the superuser with rebooting the system. */
+	//if (!capable(CAP_SYS_BOOT))
+		//return -EPERM;
 printk("LINUX_REBOOT_CMD_RESTART");
 	/* For safety, we require "magic" arguments. */
 	if (magic1 != LINUX_REBOOT_MAGIC1 ||

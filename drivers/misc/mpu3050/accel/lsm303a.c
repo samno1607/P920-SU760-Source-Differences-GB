@@ -144,7 +144,10 @@ int lsm303dlha_read(void *mlsl_handle,
 		    struct ext_slave_platform_data *pdata,
 		    unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 struct ext_slave_descr lsm303dlha_descr = {
@@ -154,6 +157,7 @@ struct ext_slave_descr lsm303dlha_descr = {
 	/*.resume           = */ lsm303dlha_resume,
 	/*.read             = */ lsm303dlha_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "lsm303dlha",
 	/*.type             = */ EXT_SLAVE_TYPE_ACCELEROMETER,
 	/*.id               = */ ACCEL_ID_LSM303,

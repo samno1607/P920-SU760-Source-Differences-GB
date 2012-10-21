@@ -14,4 +14,5 @@ source "drivers/cosmo/fuel_gauge/Kconfig"
 source "drivers/cosmo/subpmic/Kconfig"
 source "drivers/cosmo/misc/Kconfig"
 source "drivers/cosmo/mtc_eta/Kconfig"
+source "drivers/cosmo/mhl/Kconfig"
 endif #LG_FW_DRIVERS

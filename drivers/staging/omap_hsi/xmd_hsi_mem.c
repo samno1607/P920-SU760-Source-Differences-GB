@@ -1,5 +1,5 @@
-/* 
- * arch/arm/mach-omap2/xmd_hsi_mem.c
+/*
+ * xmd_hsi_mem.c
  *
  * Copyright (C) 2011 Intel Mobile Communications. All rights reserved.
  *
@@ -12,327 +12,390 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details. 
+ * GNU General Public License for more details.
  *
  */
 
-                                                                               
-/*****************************************************************************/ 
-/* INCLUDES                                                                  */ 
-/*****************************************************************************/ 
-
+/*****************************************************************************/
+/* INCLUDES                                                                  */
+/*****************************************************************************/
 
 #include <linux/module.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/device.h>
-#include <linux/sched.h>
-#include <linux/wait.h>
-#include <linux/errno.h>
-#include <linux/mutex.h>
-#include <linux/semaphore.h>
-#include <linux/spinlock.h>
-#include <linux/workqueue.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include "xmd_hsi_mem.h"
 
-#ifdef IFX_HSI_BUFFERS
-#ifndef HSI_DMA_BUFFERS
-unsigned char small_block[HSI_NUM_SMALL_BLOCKS][HSI_SMALL_BLOCK_SIZE];
-unsigned char medium_block[HSI_NUM_MEDIUM_BLOCKS][HSI_MEDIUM_BLOCK_SIZE];
-unsigned char large_block[HSI_NUM_LARGE_BLOCKS][HSI_LARGE_BLOCK_SIZE];
+#if defined (HSI_PRE_ALLOC_BUFFERS)
+unsigned int *hsi_mem_blk0_ptr[HSI_MEM_NUM_OF_BLK0];
+unsigned int *hsi_mem_blk1_ptr[HSI_MEM_NUM_OF_BLK1];
+unsigned int *hsi_mem_blk2_ptr[HSI_MEM_NUM_OF_BLK2];
+unsigned int *hsi_mem_blk3_ptr[HSI_MEM_NUM_OF_BLK3];
+
+#if !defined (HSI_MEM_USE_DMA_BUFS)
+/*Declared as int to make sure that buffers are word aligned */
+unsigned int hsi_mem_blk0[HSI_MEM_NUM_OF_BLK0][HSI_MEM_BLOCK0_SIZE/4];
+unsigned int hsi_mem_blk1[HSI_MEM_NUM_OF_BLK1][HSI_MEM_BLOCK1_SIZE/4];
+unsigned int hsi_mem_blk2[HSI_MEM_NUM_OF_BLK2][HSI_MEM_BLOCK2_SIZE/4];
+unsigned int hsi_mem_blk3[HSI_MEM_NUM_OF_BLK3][HSI_MEM_BLOCK3_SIZE/4];
 #else
-unsigned char *small_block[HSI_NUM_SMALL_BLOCKS];
-unsigned char *medium_block[HSI_NUM_MEDIUM_BLOCKS];
-unsigned char *large_block[HSI_NUM_LARGE_BLOCKS];
+unsigned int *hsi_mem_blk0[HSI_MEM_NUM_OF_BLK0];
+unsigned int *hsi_mem_blk1[HSI_MEM_NUM_OF_BLK1];
+unsigned int *hsi_mem_blk2[HSI_MEM_NUM_OF_BLK2];
+unsigned int *hsi_mem_blk3[HSI_MEM_NUM_OF_BLK3];
 #endif
 
-unsigned char *fallback_block[HSI_NUM_FALLBACK_BLOCKS] = {NULL};
-
-/* internal memory management */
-#if HSI_NUM_SMALL_BLOCKS > 32
-#error HSI_NUM_SMALL_BLOCKS is too large i.e. larger than 32
+unsigned char *hsi_mem_fb_block[HSI_MEM_NUM_OF_FB_BLK] = {NULL};
 #endif
-#if HSI_NUM_MEDIUM_BLOCKS > 32
-#error HSI_NUM_MEDIUM_BLOCKS is too large i.e. larger than 32
-#endif
-#if HSI_NUM_LARGE_BLOCKS > 32
-#error HSI_NUM_LARGE_BLOCKS is too large i.e. larger than 32
-#endif
+static spinlock_t hsi_mem_lock;
 
-unsigned long small_block_avail;
-unsigned long medium_block_avail;
-unsigned long large_block_avail;
+#if defined (HSI_MEM_DEBUG)
+int mem_dbg_blk0_max;			/* maximum number of allocated blocks from blk0 */
+int mem_dbg_blk1_max;			/* maximum number of allocated blocks from blk1 */
+int mem_dbg_blk2_max;			/* maximum number of allocated blocks from blk2 */
+int mem_dbg_blk3_max;			/* maximum number of allocated blocks from blk3 */
+int mem_dbg_fb_max;				/* maximum number of allocated blocks from fb */
 
+/*****************************************************************************/
+/* Function:... hsi_dbg_mem_init                                               */
+/*****************************************************************************/
+static void hsi_dbg_mem_init(void)
+{
+	mem_dbg_blk0_max = 0;
+	mem_dbg_blk1_max = 0;
+	mem_dbg_blk2_max = 0;
+	mem_dbg_blk3_max = 0;
+	mem_dbg_fb_max = 0;
+}
 
-#if HSI_MEM_DEBUG
-unsigned long mem_dbg_stat_size[MEM_STAT_RANGE + 1]; /* total number of allocated blocks of size MEM_STAT_RANGE, MEM_STAT_RANGE * 2, .... */
-unsigned long mem_dbg_small_block_cnt;               /* currently allocated blocks from large pool */
-unsigned long mem_dbg_small_block_max;               /* maximum number of allocated blocks from large pool */
-unsigned long mem_dbg_medium_block_cnt;              /* currently allocated blocks from medium pool */
-unsigned long mem_dbg_medium_block_max;              /* maximum number of allocated blocks from medium pool */
-unsigned long mem_dbg_large_block_cnt;               /* currently allocated blocks from large pool */
-unsigned long mem_dbg_large_block_max;               /* maximum number of allocated blocks from large pool */
-unsigned long mem_dbg_max_block_size;               /* largest block size */
-unsigned long mem_dbg_min_block_size;               /* smallest block size */
+/*****************************************************************************/
+/* Function:... hsi_dbg_mem_log                                               */
+/*****************************************************************************/
+static void hsi_dbg_mem_log(char* txt, int* pre_max, int cur_index)
+{
+	if((*pre_max) < cur_index)
+	{
+		printk("hsi_dbg_mem: [%s] pre_max[%d] cur_index [%d]\n", txt, (*pre_max), cur_index);
+		(*pre_max) = cur_index;
+	}
+}
 #endif /* HSI_MEM_DEBUG */
 
-//#define HSI_MEM_CLEAR
-#endif
-
-
-/*****************************************************************************/ 
-/* Function:... mipi_hsi_mem_mem_init                                        */
+/*****************************************************************************/
+/* Function:... hsi_mem_mem_init                                             */
 /* Description: Initialization of the memory pools.                          */
-/*****************************************************************************/ 
-
-int mipi_hsi_mem_init(void)
+/*****************************************************************************/
+int hsi_mem_init(void)
 {
-	unsigned long i;
-#ifdef IFX_HSI_BUFFERS
-	small_block_avail =  HSI_NUM_SMALL_BLOCKS;
-	medium_block_avail = HSI_NUM_MEDIUM_BLOCKS;
-	large_block_avail =  HSI_NUM_LARGE_BLOCKS;
+	static int is_hsi_mem_init;
 
-#if HSI_MEM_DEBUG
-	for (i = 0; i < MEM_STAT_RANGE + 1; i++)
-		mem_dbg_stat_size[i] = 0;
-	mem_dbg_small_block_cnt = 0;
-	mem_dbg_small_block_max = 0;
-	mem_dbg_large_block_cnt = 0;
-	mem_dbg_large_block_max = 0;
-	mem_dbg_medium_block_cnt = 0;
-	mem_dbg_medium_block_max = 0;
-	mem_dbg_max_block_size = 0;
-	mem_dbg_min_block_size = 0xFFFFFFFF;
+	if(!is_hsi_mem_init) {
+#if defined (HSI_PRE_ALLOC_BUFFERS) && defined (HSI_MEM_USE_DMA_BUFS)
+	unsigned int i;
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK0; i++) {
+		hsi_mem_blk0[i] =  (unsigned int*) kmalloc(HSI_MEM_BLOCK0_SIZE,
+												GFP_DMA|GFP_KERNEL|GFP_ATOMIC);
+#if defined (HSI_MEM_ENABLE_LOGS)
+		if(hsi_mem_blk0[i] == NULL)
+			printk("\nhsi_mem: failed to alloc HSI_MEM_BLOCK0  memory.i=%d",i);
+#endif
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK1; i++) {
+		hsi_mem_blk1[i] =  (unsigned int*) kmalloc(HSI_MEM_BLOCK1_SIZE,
+												GFP_DMA|GFP_KERNEL|GFP_ATOMIC);
+#if defined (HSI_MEM_ENABLE_LOGS)
+		if(hsi_mem_blk1[i] == NULL)
+			printk("\nhsi_mem: failed to alloc HSI_MEM_BLOCK1  memory.i=%d",i);
+#endif
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK2; i++) {
+		hsi_mem_blk2[i] =  (unsigned int*) kmalloc(HSI_MEM_BLOCK2_SIZE,
+												GFP_DMA|GFP_KERNEL|GFP_ATOMIC);
+#if defined (HSI_MEM_ENABLE_LOGS)
+		if(hsi_mem_blk2[i] == NULL)
+			printk("\nhsi_mem: failed to alloc HSI_MEM_BLOCK2  memory.i=%d",i);
+#endif
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK3; i++) {
+		hsi_mem_blk3[i] =  (unsigned int*) kmalloc(HSI_MEM_BLOCK3_SIZE,
+												GFP_DMA|GFP_KERNEL|GFP_ATOMIC);
+#if defined (HSI_MEM_ENABLE_LOGS)
+		if(hsi_mem_blk3[i] == NULL)
+			printk("\nhsi_mem: failed to alloc HSI_MEM_BLOCK3  memory.i=%d",i);
+#endif
+	}
+#endif
+	spin_lock_init(&hsi_mem_lock);
+
+#if defined (HSI_MEM_DEBUG)
+	hsi_dbg_mem_init();
 #endif /* HSI_MEM_DEBUG */
 
-#ifdef HSI_DMA_BUFFERS
-	for (i=0; i<HSI_NUM_SMALL_BLOCKS; i++) {
-		small_block[i] = (unsigned char *) kmalloc(HSI_SMALL_BLOCK_SIZE, GFP_DMA|GFP_KERNEL);
-    
-		if (!small_block[i]) {
-#ifdef HSI_MEM_DEBUG
-			printk("\nHSIMEM: DMA MEM not available");
-#endif
-			return -ENOMEM;
-		}
+	is_hsi_mem_init = 1;
 	}
-  
-	for (i=0; i<HSI_NUM_MEDIUM_BLOCKS; i++) {
-		medium_block[i] = (unsigned char *) kmalloc(HSI_MEDIUM_BLOCK_SIZE, GFP_DMA|GFP_KERNEL);
-    
-		if (!medium_block[i]) {
-#ifdef HSI_MEM_DEBUG
-			printk("\nHSIMEM: DMA MEM not available");
-#endif      	
-			return -ENOMEM;
-		}
-	}
-  
-	for (i=0; i<HSI_NUM_LARGE_BLOCKS; i++) {
-		large_block[i] = (unsigned char *) kmalloc(HSI_LARGE_BLOCK_SIZE, GFP_DMA|GFP_KERNEL);
-    
-		if (!large_block[i]) {
-#ifdef HSI_MEM_DEBUG
-			printk("\nHSIMEM: DMA MEM not available");
-#endif      
-			return -ENOMEM;
-		}
-	}
-#endif
-#endif
 	return 0;
-} /* mipi_hsi_mem_init */
+}
 
-
-/*****************************************************************************/ 
-/* Function:... mipi_hsi_mem_uninit                                        */
-/* Description: Freeing of memory pools                                    */
-/*****************************************************************************/ 
-
-int mipi_hsi_mem_uninit(void)
+/*****************************************************************************/
+/* Function:... hsi_mem_uninit                                               */
+/* Description: Freeing of memory pools                                      */
+/*****************************************************************************/
+int hsi_mem_uninit(void)
 {
-	unsigned long i;
+	return 0;
+}
 
-#ifdef IFX_HSI_BUFFERS
-#ifdef HSI_DMA_BUFFERS
-	for (i=0; i<HSI_NUM_SMALL_BLOCKS; i++)
-		kfree(small_block[i]);
-	for (i=0; i<HSI_NUM_MEDIUM_BLOCKS; i++)
-		kfree(medium_block[i]);
-	for (i=0; i<HSI_NUM_LARGE_BLOCKS; i++)
-		kfree(large_block[i]);
-#endif
+/*****************************************************************************/
+/* Function:... hsi_mem_reinit                                               */
+/* Description: Initialization of the memory pools for RIL recovery                                     */
+/*****************************************************************************/
+int hsi_mem_reinit(void)
+{
+#if defined (HSI_PRE_ALLOC_BUFFERS)
+	unsigned int i;
+
+	spin_lock_bh(&hsi_mem_lock);
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK0;i++) {
+		hsi_mem_blk0_ptr[i] = NULL;
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK1;i++) {
+		hsi_mem_blk1_ptr[i] = NULL;
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK2; i++) {
+		hsi_mem_blk2_ptr[i] = NULL;
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK3; i++) {
+		hsi_mem_blk3_ptr[i] = NULL;
+	}
+
+	/* free fallback memory */
+	for (i=0; i < HSI_MEM_NUM_OF_FB_BLK; i++) {
+		if (hsi_mem_fb_block[i] != NULL) {
+			kfree(hsi_mem_fb_block[i]);
+			hsi_mem_fb_block[i] = NULL;
+		}
+	}
+
+	/*TODO : How to free allocated buffer from BUF retry WQ.*/
+
+#if defined (HSI_MEM_DEBUG)
+	hsi_dbg_mem_init();
+#endif /* HSI_MEM_DEBUG */
+
+	spin_unlock_bh(&hsi_mem_lock);
 #endif
 	return 0;
-} /* mipi_hsi_mem_uninit */
+}
 
-
-/*****************************************************************************/ 
-/* Function:... mipi_hsi_mem_alloc                                           */
+/*****************************************************************************/
+/* Function:... hsi_mem_alloc                                                */
 /* Description: allocates a block with the requested size. If no memory      */
 /* block of the requested size available, NULL will be returned. The         */
-/* returned pointer will be aligned to 16 byte borders.                      */
-/*****************************************************************************/ 
-
-void *mipi_hsi_mem_alloc(int size)
+/* returned pointer will be word aligned                                     */
+/*****************************************************************************/
+void *hsi_mem_alloc(int size)
 {
-#ifdef IFX_HSI_BUFFERS
-	unsigned long i;
-	unsigned long mask;
-#if HSI_MEM_DEBUG
-	unsigned long stat_size;
+	void *buf = NULL;
+#if defined (HSI_PRE_ALLOC_BUFFERS)
+	unsigned int i;
+	spin_lock_bh(&hsi_mem_lock);
 
-	for (i = 0, stat_size = MEM_STAT_MIN_SIZE; i < MEM_STAT_RANGE; i++, stat_size *= 2)
-		if (size <= stat_size) {
-			mem_dbg_stat_size[i]++;
-			break;
+	if(size == 0) {
+		goto quit_mem_alloc;
+	}
+
+	if(size <= HSI_MEM_BLOCK0_SIZE) {
+		for(i=0;i<HSI_MEM_NUM_OF_BLK0;i++) {
+			if (hsi_mem_blk0_ptr[i] == NULL) {
+				hsi_mem_blk0_ptr[i] = hsi_mem_blk0[i];
+				buf = (void *)hsi_mem_blk0_ptr[i];
+#if defined (HSI_MEM_DEBUG)
+			hsi_dbg_mem_log("HSI_MEM_BLOCK0_SIZE(512B)", &mem_dbg_blk0_max, i);
+#endif
+				goto quit_mem_alloc;
+			}
 		}
-	if (size > stat_size)
-		mem_dbg_stat_size[i]++;
-#endif /* HSI_MEM_DEBUG */
-
-
-	if (size < HSI_SMALL_BLOCK_SIZE) {  /* small blocks */
-		for (i = 0, mask = 0x01; i < HSI_NUM_SMALL_BLOCKS; i++, mask <<= 1)
-			if (mask & small_block_avail) {
-				small_block_avail &= ~mask;
-#if HSI_MEM_DEBUG
-				mem_dbg_small_block_cnt++;
-				if (mem_dbg_small_block_cnt%HSI_NUM_SMALL_BLOCKS > mem_dbg_small_block_max)
-					mem_dbg_small_block_max = mem_dbg_small_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-#ifdef HSI_MEM_CLEAR
-				memset((void *)small_block[i],'$', HSI_SMALL_BLOCK_SIZE);
+#if defined (HSI_MEM_ENABLE_LOGS)
+		printk("\nhsi_mem: Running out of HSI_MEM_BLOCK0 memory.\n");
 #endif
-				return (void *)small_block[i];
-			}
-	}
-	if (size < HSI_MEDIUM_BLOCK_SIZE) {  /* medium blocks */
-		for (i = 0, mask = 0x01; i < HSI_NUM_MEDIUM_BLOCKS; i++, mask <<= 1)
-			if (mask & medium_block_avail)
-			{
-				medium_block_avail &= ~mask;
-#if HSI_MEM_DEBUG
-				mem_dbg_medium_block_cnt++;
-				if (mem_dbg_medium_block_cnt%HSI_NUM_MEDIUM_BLOCKS > mem_dbg_medium_block_max)
-					mem_dbg_medium_block_max = mem_dbg_medium_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-#ifdef HSI_MEM_CLEAR
-				memset((void *)medium_block[i],'$',HSI_MEDIUM_BLOCK_SIZE);
-#endif
-				return (void *)medium_block[i];
-			}
-	}
-	if (size < HSI_LARGE_BLOCK_SIZE) {  /* large blocks */
-		for (i = 0, mask = 0x01; i < HSI_NUM_LARGE_BLOCKS; i++, mask <<= 1)
-			if (mask & large_block_avail) {
-				large_block_avail &= ~mask;
-#if HSI_MEM_DEBUG
-				mem_dbg_large_block_cnt++;
-				if (mem_dbg_large_block_cnt%HSI_NUM_LARGE_BLOCKS > mem_dbg_large_block_max)
-					mem_dbg_large_block_max = mem_dbg_large_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-#ifdef HSI_MEM_CLEAR
-				memset((void *)large_block[i],'$',HSI_LARGE_BLOCK_SIZE);
-#endif
-				return (void *)large_block[i];
-			}
 	}
 
-#if HSI_MEM_DEBUG
-	printk("\nHSI_MEM: Going for fallback memory[sz: %d]\n",size);
+	if((size > HSI_MEM_BLOCK0_SIZE) && (size <= HSI_MEM_BLOCK1_SIZE)) {
+		for(i=0; i < HSI_MEM_NUM_OF_BLK1;i++) {
+			if (hsi_mem_blk1_ptr[i] == NULL) {
+				hsi_mem_blk1_ptr[i] = hsi_mem_blk1[i];
+				buf = (void *)hsi_mem_blk1_ptr[i];
+#if defined (HSI_MEM_DEBUG)
+				hsi_dbg_mem_log("HSI_MEM_BLOCK1_SIZE(2KB)", &mem_dbg_blk1_max, i);
+#endif
+				goto quit_mem_alloc;
+			}
+		}
+#if defined (HSI_MEM_ENABLE_LOGS)
+		printk("\nhsi_mem: Running out of HSI_MEM_BLOCK1 memory.\n");
+#endif
+	}
+
+/* Uplink Throughput issue : share pre-allocated buffer (2KB & 8KB) */
+#if 1
+	if((size > HSI_MEM_BLOCK0_SIZE) && (size <= HSI_MEM_BLOCK2_SIZE)) {
+#else
+	if((size > HSI_MEM_BLOCK1_SIZE) && (size <= HSI_MEM_BLOCK2_SIZE)) {
 #endif
 
-  /* fallback to kernel for memory */
-	for (i=0; i<HSI_NUM_FALLBACK_BLOCKS; i++) {
-		if (fallback_block[i] == NULL) {
-			fallback_block[i] = (unsigned char*) kmalloc(size, GFP_DMA|GFP_KERNEL|GFP_ATOMIC);
-			return (void *) fallback_block[i];
+		for(i=0; i < HSI_MEM_NUM_OF_BLK2;i++) {
+			if (hsi_mem_blk2_ptr[i] == NULL) {
+				hsi_mem_blk2_ptr[i] = hsi_mem_blk2[i];
+				buf = (void *)hsi_mem_blk2_ptr[i];
+#if defined (HSI_MEM_DEBUG)
+				hsi_dbg_mem_log("HSI_MEM_BLOCK2_SIZE(8KB)", &mem_dbg_blk2_max, i);
+#endif
+				
+				goto quit_mem_alloc;
+			}
+		}
+#if defined (HSI_MEM_ENABLE_LOGS)
+		printk("\nhsi_mem: Running out of HSI_MEM_BLOCK2 memory.\n");
+#endif
+	}
+
+/* Uplink Throughput issue : share pre-allocated buffer (8KB & 30KB) */
+#if 1
+	if((size > HSI_MEM_BLOCK1_SIZE) && (size <= HSI_MEM_BLOCK3_SIZE)) {
+#else
+	if((size > HSI_MEM_BLOCK2_SIZE) && (size <= HSI_MEM_BLOCK3_SIZE)) {
+#endif
+
+		for(i=0; i < HSI_MEM_NUM_OF_BLK3;i++) {
+			if (hsi_mem_blk3_ptr[i] == NULL) {
+				hsi_mem_blk3_ptr[i] = hsi_mem_blk3[i];
+				buf = (void *)hsi_mem_blk3_ptr[i];
+#if defined (HSI_MEM_DEBUG)
+				hsi_dbg_mem_log("HSI_MEM_BLOCK3_SIZE(30KB)", &mem_dbg_blk3_max, i);
+#endif
+				goto quit_mem_alloc;
+			}
+		}
+#if defined (HSI_MEM_ENABLE_LOGS)
+		printk("\nhsi_mem: Running out of HSI_MEM_BLOCK3 memory.\n");
+#endif
+	}
+
+#if defined (HSI_MEM_ENABLE_LOGS)
+	printk("\nhsi_mem: Requesting Fall back memory of size %d.\n",size);
+#endif
+
+	/* fallback to kernel for memory */
+	for (i=0; i < HSI_MEM_NUM_OF_FB_BLK; i++) {
+		if (hsi_mem_fb_block[i] == NULL) {
+			hsi_mem_fb_block[i] = (unsigned char*) kmalloc(size,
+													GFP_DMA|GFP_ATOMIC);
+			if(hsi_mem_fb_block[i] == NULL) {
+#if defined (HSI_MEM_ENABLE_LOGS)
+				printk("\nhsi_mem:Failed to alloc fall-back mem, returning NULL");
+#endif
+				buf = NULL;
+			} else {
+				buf = (void *) hsi_mem_fb_block[i];
+#if defined (HSI_MEM_DEBUG)
+			hsi_dbg_mem_log("HSI_MEM_NUM_OF_FB_BLK", &mem_dbg_fb_max, i);
+#endif
+			}
+			goto quit_mem_alloc;
 		}
 	}
-  
-#if HSI_MEM_DEBUG
-	printk("\nHSI_MEM: Failed to allocate memory[sz: %d].Returning NULL\n",size);
-	printk("\nHSI_MEM: lb, mb, sb cnt = %lu, %lu, %lu\n",mem_dbg_large_block_cnt,mem_dbg_medium_block_cnt,mem_dbg_small_block_cnt);
-	printk("\nHSI_MEM: lb, mb, sb max = %lu, %lu, %lu\n",mem_dbg_large_block_max,mem_dbg_medium_block_max,mem_dbg_small_block_max);
+quit_mem_alloc:
+#else
+	spin_lock_bh(&hsi_mem_lock);
+	buf = kmalloc(size, GFP_DMA | GFP_ATOMIC);
 #endif
-
+#if defined (HSI_MEM_ENABLE_LOGS)
+	if(buf == NULL)
+		printk("\nhsi_mem:Failed to alloc mem returning NULL. Mem exhausted");
 #endif
-	return (void *)0;
-} /* mipi_hsi_mem_alloc */
+	spin_unlock_bh(&hsi_mem_lock);
+	return buf;
+}
 
-
-/*****************************************************************************/ 
-/* Function:... mipi_hsi_mem_free                                            */
+/*****************************************************************************/
+/* Function:... hsi_mem_free                                                 */
 /* Description: Frees a memory block, which was allocated before with        */
-/* mipi_hsi_mem_alloc.                                                       */
-/*****************************************************************************/ 
-
-int mipi_hsi_mem_free(unsigned char* buf)
+/*              hsi_mem_alloc.                                               */
+/*****************************************************************************/
+void hsi_mem_free(void* buf)
 {
-#ifdef IFX_HSI_BUFFERS
-	unsigned long i;
-	unsigned long mask;
-	unsigned char *mem = (unsigned char *) buf;
+#if defined (HSI_PRE_ALLOC_BUFFERS)
+	unsigned int i;
+	unsigned int *mem = (unsigned int *) buf;
+	unsigned char *fb_mem = (unsigned char *) buf;
 
-	for (i = 0, mask = 0x01; i < HSI_NUM_SMALL_BLOCKS; i++, mask <<= 1)
-		if (mem == small_block[i]) {
-#if HSI_MEM_DEBUG
-			if (mask & small_block_avail)
-				return 0; //mipi_hsi_error(MIPI_HSI_ERROR_MEM_NOT_ALLOCATED, __LINE__, __FILE__);
-#endif  /* HSI_MEM_DEBUG */
-			small_block_avail |= mask;
-#if HSI_MEM_DEBUG
-			mem_dbg_small_block_cnt++;
-			if (mem_dbg_small_block_cnt > mem_dbg_small_block_max)
-				mem_dbg_small_block_max = mem_dbg_small_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-			return 0;
-		}
+	spin_lock_bh(&hsi_mem_lock);
 
-	for (i = 0, mask = 0x01; i < HSI_NUM_MEDIUM_BLOCKS; i++, mask <<= 1)
-		if (mem == medium_block[i]) {
-#if HSI_MEM_DEBUG
-			if (mask & medium_block_avail)
-				return 0;//mipi_hsi_error(MIPI_HSI_ERROR_MEM_NOT_ALLOCATED, __LINE__, __FILE__);
-#endif  /* HSI_MEM_DEBUG */
-			medium_block_avail |= mask;
-#if HSI_MEM_DEBUG
-			mem_dbg_medium_block_cnt++;
-			if (mem_dbg_medium_block_cnt > mem_dbg_medium_block_max)
-				mem_dbg_medium_block_max = mem_dbg_medium_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-			return 0;
-		}
+	if(mem == NULL) {
+		goto quit_mem_free;
+	}
 
-	for (i = 0, mask = 0x01; i < HSI_NUM_LARGE_BLOCKS; i++, mask <<= 1)
-		if (mem == large_block[i]) {
-#if HSI_MEM_DEBUG
-			if (mask & large_block_avail)
-				return 0; //mipi_hsi_error(MIPI_HSI_ERROR_MEM_NOT_ALLOCATED, __LINE__, __FILE__);
-#endif  /* HSI_MEM_DEBUG */
-			large_block_avail |= mask;
-#if HSI_MEM_DEBUG
-			mem_dbg_large_block_cnt++;
-			if (mem_dbg_large_block_cnt > mem_dbg_large_block_max)
-				mem_dbg_large_block_max = mem_dbg_large_block_cnt;
-#endif /* HSI_MEM_DEBUG */
-			return 0;
-		}
-
-  /* free fallback memory */
-	for (i=0; i<HSI_NUM_FALLBACK_BLOCKS; i++) {
-		if (fallback_block[i] == mem) {
-			kfree(mem);
-			fallback_block[i] = NULL;
-			return 0;
+	for(i=0; i < HSI_MEM_NUM_OF_BLK0;i++) {
+		if (mem == hsi_mem_blk0_ptr[i]) {
+			hsi_mem_blk0_ptr[i] = NULL;
+			goto quit_mem_free;
 		}
 	}
-#endif
-	return 0;
-} /* mipi_hsi_mem_free */
 
-                                                          
+	for(i=0; i < HSI_MEM_NUM_OF_BLK1;i++) {
+		if (mem == hsi_mem_blk1_ptr[i]) {
+			hsi_mem_blk1_ptr[i] = NULL;
+			goto quit_mem_free;
+		}
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK2; i++) {
+		if (mem == hsi_mem_blk2_ptr[i]) {
+			hsi_mem_blk2_ptr[i] = NULL;
+			goto quit_mem_free;
+		}
+	}
+
+	for(i=0; i < HSI_MEM_NUM_OF_BLK3; i++) {
+		if (mem == hsi_mem_blk3_ptr[i]) {
+			hsi_mem_blk3_ptr[i] = NULL;
+			goto quit_mem_free;
+		}
+	}
+
+	/* free fallback memory */
+	for (i=0; i < HSI_MEM_NUM_OF_FB_BLK; i++) {
+		if (hsi_mem_fb_block[i] == fb_mem) {
+			kfree(fb_mem);
+			hsi_mem_fb_block[i] = NULL;
+			goto quit_mem_free;
+		}
+	}
+
+#if defined (HSI_MEM_ENABLE_LOGS)
+	printk("\nhsi_mem: Failed to free mem - ERROR TO CHECK");
+	//dump_stack();
+#endif
+
+	/*Reached here ? Then this should be allocated from BUF retry WQ.*/
+#if 0 //defined (HSI_LL_ENABLE_RX_BUF_RETRY_WQ)
+	kfree(buf);
+#endif
+
+quit_mem_free:
+#else
+	spin_lock_bh(&hsi_mem_lock);
+	if(buf != NULL) {
+		kfree(buf);
+	}
+#endif
+	spin_unlock_bh(&hsi_mem_lock);
+}
+

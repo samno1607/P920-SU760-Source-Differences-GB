@@ -39,7 +39,6 @@ int omapdss_display_enable(struct omap_dss_device *dssdev)
 {
 	int r = 0;
 
-
 	if(!dssdev->driver) return r;
 
 	/* use smart_enable if present */
@@ -372,8 +371,21 @@ static ssize_t display_hpd_enabled_store(struct device *dev,
 
 	enabled = simple_strtoul(buf, NULL, 10);
 
-	
-
+//	if (enabled != (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)) {
+//		if (enabled) {
+//			r = dssdev->driver->hpd_enable(dssdev);
+//			if (r)
+//				return r;
+//		} else {
+//			dssdev->driver->disable(dssdev);
+//			if ( dssdev->driver->hpd_disable )
+//			{
+//				r = dssdev->driver->hpd_disable(dssdev);
+//				if (r)
+//					return r;
+//			}
+//		}
+//	}
 	if (enabled) {
 		r = dssdev->driver->hpd_enable(dssdev);
 		if (r)
@@ -386,7 +398,6 @@ static ssize_t display_hpd_enabled_store(struct device *dev,
 				return r;
 		}
 	}
-	
 
 	return size;
 }
@@ -621,7 +632,7 @@ static int dss_suspend_device(struct device *dev, void *data)
 	/* don't work on suspended displays */
 	if (dssdev->state == OMAP_DSS_DISPLAY_SUSPENDED)
 		return 0;
-	
+	//if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE) {
 	if ( dssdev->state != OMAP_DSS_DISPLAY_ACTIVE && dssdev->state != OMAP_DSS_DISPLAY_ACTIVE_NO_DRAW ) {
 		dssdev->activate_after_resume = false;
 		return 0;
@@ -718,6 +729,8 @@ int dss_mainclk_state_disable(bool do_clk_disable)
 		return -EBUSY;
 	} else {
 		if (do_clk_disable) {
+			//this code fragment is critical section.
+			//simple critical section using atomic op
 			static atomic_t cnt = ATOMIC_INIT(0);
 			while ( atomic_add_return(1, &cnt) > 1)
 			{
@@ -729,10 +742,8 @@ int dss_mainclk_state_disable(bool do_clk_disable)
 				atomic_dec(&cnt);
 				return 0;
 			}
-			
 			save_all_ctx();
 			dss_mainclk_disable();
-			
 			DSSINFO("DSS main clock disabled\n");
 			atomic_dec(&cnt);
 		}

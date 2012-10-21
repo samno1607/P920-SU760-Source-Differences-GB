@@ -1,8 +1,3 @@
-config GFX_DMA_COPY
-        bool "Cosmo GFX DMA COPY"                                                                                     
-        depends on ARCH_OMAP4 && MACH_LGE_COSMOPOLITAN
-        ---help---                                                                                                    
-          Support for Cosmopolitan Real 3D core DMA copy.
 config SGX540
 	tristate "PowerVR SGX"
 	depends on ARCH_OMAP4

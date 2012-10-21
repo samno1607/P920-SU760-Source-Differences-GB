@@ -53,7 +53,6 @@ void muic_init_max14526(TYPE_RESET reset)
 {
 	printk(KERN_WARNING "[MUIC] max14526_init()\n");
 
-	
 	atomic_set(&muic_charger_detected, 0); 
 	
 	if (reset == RESET) {
@@ -93,6 +92,7 @@ void set_max14526_ap_uart_mode(void) //UART_MODE
 void set_max14526_ap_usb_mode(void)
 {
 	printk(KERN_WARNING "[MUIC] set_max14526_ap_usb_mode\n" );
+	//KIMCS TEST	
 	usif_switch_ctrl(USIF_AP);
 	dp3t_switch_ctrl(DP3T_CP_UART);
 
@@ -247,6 +247,7 @@ s32 muic_max14526_detect_accessory(s32 upon_irq)
 		printk(KERN_INFO "[MUIC] INT_STAT reading failed\n");
 		muic_path = MUIC_UNKNOWN;
 		charging_mode = CHARGING_UNKNOWN;
+		//set_muic_charger_detected();
 		return ret;
 	}
 	
@@ -309,6 +310,7 @@ s32 muic_max14526_detect_accessory(s32 upon_irq)
         printk(KERN_INFO "[MUIC] charging_ic_deactive()\n");
     }
 	
+	//set_muic_charger_detected();
 	return ret;
 }
 EXPORT_SYMBOL(muic_max14526_detect_accessory);

@@ -110,6 +110,70 @@ static ssize_t rt8063_store_power_on_off(struct device *dev,
 		goto err_sscanf;
         }
 
+// sujinlee Temp VCM Always ON 20110112
+/*	switch(num){
+		case 0:
+			rt8053_power_status = RT8063_POWER_ALL_OFF;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | rt8053_status);
+       			gpio_direction_output(pdata->en_gpio_num, 0);
+        		mdelay(5);
+			break;	
+		case 1:
+			gpio_direction_output(pdata->en_gpio_num, 1);
+        		mdelay(5);
+			rt8053_power_status = RT8063_POWER_LEFT_ON;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | 0);
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | rt8053_status);
+			break;
+
+		case 2:
+			gpio_direction_output(pdata->en_gpio_num, 1);
+        		mdelay(5);
+			rt8053_power_status = RT8063_POWER_ALL_ON;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | rt8053_status);
+			break;
+		default:
+			break;
+	}
+*/
+
+/*	switch(num){
+		case 0:
+			rt8053_power_status = RT8063_POWER_ALL_OFF;
+			rt8053_vcm_status = RT8063_VCM_ALL_OFF;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | 0);
+       			gpio_direction_output(pdata->en_gpio_num, 0);
+        		mdelay(5);
+			break;	
+		case 1:
+			gpio_direction_output(pdata->en_gpio_num, 1);
+        		mdelay(5);
+			rt8053_power_status = RT8063_POWER_LEFT_ON;
+			rt8053_vcm_status = RT8063_VCM_LEFT_ON;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | 0);
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | 0x2b);
+			break;
+
+		case 2:
+			gpio_direction_output(pdata->en_gpio_num, 1);
+        		mdelay(5);
+			rt8053_power_status = RT8063_POWER_ALL_ON;
+			rt8053_vcm_status = RT8063_VCM_ALL_ON;
+			rt8053_status = rt8053_power_status & rt8053_vcm_status;
+			rt8053_write_reg(rt8053_client, RT8053_OUTPUT_ENABLE, 0x80 | 0x3f);
+			break;
+		default:
+			break;
+	}
+*/
+// sujinlee Temp VCM Always ON 20110112 end
+
+// sujinlee temp for 1.21 and sony
 	switch(num){
 		case 0:
 			rt8053_power_status = RT8063_POWER_ALL_OFF;
@@ -133,6 +197,7 @@ static ssize_t rt8063_store_power_on_off(struct device *dev,
 		default:
 			break;
 	}
+//end
 	return count;
 
 err_sscanf:
@@ -285,6 +350,7 @@ static int rt8053_remove(struct i2c_client *client)
 static int rt8053_suspend(struct i2c_client *client, pm_message_t mesg)
 {
  	struct rt8053_platform_data*	pdata	=	client->dev.platform_data;
+//	gpio_direction_output(pdata->en_gpio_num, 0);	 // sujinlee temp for lock/unlock
 
 	printk("enter suspend!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 

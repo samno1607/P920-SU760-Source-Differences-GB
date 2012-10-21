@@ -187,10 +187,10 @@ tMLError MLSLSerialWriteMem(void *sl_handle,
 	unsigned short bytesWritten = 0;
 
 	if ((memAddr & 0xFF) + length > MPU_MEM_BANK_SIZE) {
-		/*printk
+		printk
 		    ("memory read length (%d B) extends beyond its limits (%d) "
 		     "if started at location %d\n", length,
-		     MPU_MEM_BANK_SIZE, memAddr & 0xFF);*/
+		     MPU_MEM_BANK_SIZE, memAddr & 0xFF);
 		return ML_ERROR_INVALID_PARAMETER;
 	}
 	while (bytesWritten < length) {
@@ -228,10 +228,10 @@ tMLError MLSLSerialReadMem(void *sl_handle,
 	unsigned short bytesRead = 0;
 
 	if ((memAddr & 0xFF) + length > MPU_MEM_BANK_SIZE) {
-		/*printk
+		printk
 		    ("memory read length (%d B) extends beyond its limits (%d) "
 		     "if started at location %d\n", length,
-		     MPU_MEM_BANK_SIZE, memAddr & 0xFF);*/
+		     MPU_MEM_BANK_SIZE, memAddr & 0xFF);
 		return ML_ERROR_INVALID_PARAMETER;
 	}
 	while (bytesRead < length) {
@@ -269,8 +269,8 @@ tMLError MLSLSerialWriteFifo(void *sl_handle,
 	unsigned short bytesWritten = 0;
 
 	if (length > FIFO_HW_SIZE) {
-		/*printk(KERN_ERR
-		       "maximum fifo write length is %d\n", FIFO_HW_SIZE);*/
+		printk(KERN_ERR
+		       "maximum fifo write length is %d\n", FIFO_HW_SIZE);
 		return ML_ERROR_INVALID_PARAMETER;
 	}
 	while (bytesWritten < length) {
@@ -307,8 +307,8 @@ tMLError MLSLSerialReadFifo(void *sl_handle,
 	unsigned short bytesRead = 0;
 
 	if (length > FIFO_HW_SIZE) {
-		/*printk(KERN_ERR
-		       "maximum fifo read length is %d\n", FIFO_HW_SIZE);*/
+		printk(KERN_ERR
+		       "maximum fifo read length is %d\n", FIFO_HW_SIZE);
 		return ML_ERROR_INVALID_PARAMETER;
 	}
 	while (bytesRead < length) {

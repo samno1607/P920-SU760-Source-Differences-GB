@@ -54,7 +54,6 @@ void charging_timer_func(unsigned long try)
 {
 	u32 wait;
 
-	
 	bat_soc = get_bat_soc();
 
 	if(charging_timer.data > 3 || bat_soc > 99)
@@ -65,6 +64,7 @@ void charging_timer_func(unsigned long try)
 	else
 	{
 		charging_timer.data += 1;
+		//wait = (HZ*CHR_TIMER_SECS * (100 + 20 - bat_soc)) / 100;
 		wait = HZ*CHR_TIMER_SECS;
 		charging_timer.expires += wait;
 
@@ -118,17 +118,15 @@ void charging_ic_active_default()
 
 	mutex_unlock(&charging_lock);
 
-	
 	bat_soc = get_bat_soc();
-
 
 	init_timer(&charging_timer);
 	charging_timer.data = 0;
+	//wait = (HZ*CHR_TIMER_SECS * (100 + 20 - bat_soc)) / 100;
 	wait = HZ*CHR_TIMER_SECS;
 	charging_timer.expires = jiffies + wait;
 	charging_timer.function = charging_timer_func;
 	add_timer(&charging_timer);
-
 	
 
 	D("[charger_rt9524]::  %s: \n", __func__);
@@ -171,17 +169,15 @@ void charging_ic_set_ta_mode()
 
 	mutex_unlock(&charging_lock);
 
-	
 	bat_soc = get_bat_soc();
-
 
 	init_timer(&charging_timer);
 	charging_timer.data = 0;
+	//wait = (HZ*CHR_TIMER_SECS * (100 + 20 - bat_soc)) / 100;
 	wait = HZ*CHR_TIMER_SECS;
 	charging_timer.expires = jiffies + wait;
 	charging_timer.function = charging_timer_func;
 	add_timer(&charging_timer);
-
 	
 	D("[charger_rt9524]::  %s: \n", __func__);
 }
@@ -233,17 +229,15 @@ void charging_ic_set_factory_mode()
 
 	mutex_unlock(&charging_lock);
 
-	
 	bat_soc = get_bat_soc();
-
 
 	init_timer(&charging_timer);
 	charging_timer.data = 0;
+	//wait = (HZ*CHR_TIMER_SECS * (100 + 20 - bat_soc)) / 100;
 	wait = HZ*CHR_TIMER_SECS;
 	charging_timer.expires = jiffies + wait;
 	charging_timer.function = charging_timer_func;
 	add_timer(&charging_timer);
-
 	
 	D("[charger_rt9524]::  %s: \n", __func__);
 }
@@ -268,9 +262,7 @@ void charging_ic_deactive()
 
 	mutex_unlock(&charging_lock);
 
-
 	del_timer(&charging_timer);
-
 
 
 }
@@ -321,7 +313,6 @@ static int charging_ic_probe(struct platform_device *dev)
 	gpio_direction_output(CHG_EN_SET_N_OMAP, 0);
 
 #if CHG_DONE_INT
-	
 	ret = gpio_request(CHG_STATUS_N_OMAP, "charging_ic_status");
 	if (ret < 0) {
 		printk(KERN_ERR "%s: Failed to request GPIO_%d for charging_ic_status\n", __func__, CHG_STATUS_N_OMAP);

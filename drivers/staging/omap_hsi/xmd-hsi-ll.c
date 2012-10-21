@@ -26,10 +26,14 @@
 #include <linux/kthread.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <linux/hsi_driver_if.h>
 #include "xmd-hsi-ll-if.h"
 #include "xmd-hsi-ll-cfg.h"
 #include "xmd-hsi-ll-internal.h"
+#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
+#include "xmd-ch.h"
+#endif
 
 #if !defined(HSI_LL_DATA_MUL_OF_16)
 
@@ -67,6 +71,7 @@
 DEFINE_MUTEX(hsi_ll_write_mutex);
 DEFINE_MUTEX(hsi_ll_open_mutex);
 DEFINE_MUTEX(hsi_ll_close_mutex);
+DEFINE_MUTEX(hsi_ll_psv);
 
 static struct hsi_ll_data_struct hsi_ll_data;
 static struct hsi_ll_if_struct   hsi_ll_if;
@@ -81,7 +86,7 @@ static struct hsi_device_driver  hsi_ll_iface =
 	.ch_mask[0] = 0,
 	.probe      = hsi_ll_probe_cb,
 	.remove     = hsi_ll_remove_cb,
-	.driver     = 
+	.driver     =
 	{
 		.name = "HSI_LINK_LAYER",
 	},
@@ -90,13 +95,23 @@ static struct hsi_device_driver  hsi_ll_iface =
 static hsi_ll_notify hsi_ll_cb;
 
 #if defined (HSI_LL_DATA_MUL_OF_16)
-static unsigned int hsi_ll_rx_cmd_data[4] = {0x00000000, 0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
-static unsigned int hsi_ll_tx_cmd_data[4] = {0x00000000, 0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
+static unsigned int hsi_ll_rx_cmd_data[4] = {
+	0x00000000,
+	0xFFFFFFFF,
+	0xFFFFFFFF,
+	0xFFFFFFFF
+};
+static unsigned int hsi_ll_tx_cmd_data[4] = {
+	0x00000000,
+	0xFFFFFFFF,
+	0xFFFFFFFF,
+	0xFFFFFFFF
+};
 #endif
 
 static int hsi_ll_send_cmd_queue(
-	unsigned int command, 
-	unsigned int channel, 
+	unsigned int command,
+	unsigned int channel,
 	unsigned int phy_id)
 {
 	if (hsi_ll_data.tx_cmd.count >= HSI_LL_MAX_CMD_Q_SIZE) {
@@ -125,8 +140,8 @@ static int hsi_ll_send_cmd_queue(
 }
 
 static int hsi_ll_read_cmd_queue(
-	unsigned int *command, 
-	unsigned int *channel, 
+	unsigned int *command,
+	unsigned int *channel,
 	unsigned int *phy_id)
 {
 	spin_lock_bh(&hsi_ll_if.wr_cmd_lock);
@@ -134,7 +149,7 @@ static int hsi_ll_read_cmd_queue(
 	if (hsi_ll_data.tx_cmd.count > 0) {
 		hsi_ll_data.tx_cmd.count--;
 	} else {
-		spin_unlock_bh(&hsi_ll_if.wr_cmd_lock);  	
+		spin_unlock_bh(&hsi_ll_if.wr_cmd_lock);
 		return HSI_LL_RESULT_QUEUE_EMPTY;
 	}
 
@@ -147,15 +162,15 @@ static int hsi_ll_read_cmd_queue(
 	if (hsi_ll_data.tx_cmd.read_index >= HSI_LL_MAX_CMD_Q_SIZE) {
 		hsi_ll_data.tx_cmd.read_index = 0;
 	}
-	
+
 	spin_unlock_bh(&hsi_ll_if.wr_cmd_lock);
 	return HSI_LL_RESULT_SUCCESS;
 }
 
 static int hsi_ll_command_decode(
-	unsigned int* message, 
-	unsigned int* ll_msg_type, 
-	unsigned int* channel, 
+	unsigned int* message,
+	unsigned int* ll_msg_type,
+	unsigned int* channel,
 	unsigned int* param)
 {
 	int ret = 0;
@@ -167,13 +182,13 @@ static int hsi_ll_command_decode(
 	case HSI_LL_MSG_BREAK:
 		*channel = HSI_LL_INVALID_CHANNEL;
 		break;
-    	case HSI_LL_MSG_OPEN_CONN:{
+	case HSI_LL_MSG_OPEN_CONN:{
 		char lcrCal, lcrAct;
 		char val1,val2,val3;
-     
+
 		*channel = ((msg & 0x0F000000) >> 24);
 		*param   = ((msg & 0x00FFFF00) >> 8 );
-      
+
 		val1 = ((msg & 0xFF000000) >> 24);
 		val2 = ((msg & 0x00FF0000) >> 16);
 		val3 = ((msg & 0x0000FF00) >>  8);
@@ -209,7 +224,7 @@ static int hsi_ll_command_decode(
 		*param   = (msg & 0x00FFFFFF);
 #if defined (HSI_LL_ENABLE_CRITICAL_LOG)
 		if (*channel == 0) {
-			printk("\nHSI_LL: Unexpected case. Received Command = %x.%s %d\n", 
+			printk("\nHSI_LL: Unexpected case. Received CMD = 0x%x. %s %d\n",
 					  msg, __func__, __LINE__);
 		}
 #endif
@@ -232,9 +247,9 @@ static int hsi_ll_command_decode(
 }
 
 static int hsi_ll_send_command(
-	int cmd_type, 
+	int cmd_type,
 	unsigned int channel,
-	void* arg, 
+	void* arg,
 	unsigned int phy_id)
 {
 	unsigned int command = 0;
@@ -250,14 +265,15 @@ static int hsi_ll_send_command(
 		unsigned int size = *(unsigned int*)arg;
 		unsigned int lcr  = 0;
 
-		if (size > 4)
+		if (size > 4) {
 			size = (size & 0x3) ? ((size >> 2) + 1):(size >> 2);
-		else
+		} else {
 			size = 1;
+		}
 
 		command = ((HSI_LL_MSG_OPEN_CONN & 0x0000000F) << 28) |
-				  ((channel              & 0x000000FF) << 24) |
-				   ((size                 & 0x0000FFFF) << 8);
+				  ((channel              & 0x0000000F) << 24) |
+				  ((size                 & 0x0000FFFF) << 8);
 
 		lcr = ((command & 0xFF000000) >> 24) ^
 			  ((command & 0x00FF0000) >> 16) ^
@@ -268,17 +284,17 @@ static int hsi_ll_send_command(
 		break;
 	case HSI_LL_MSG_CONN_READY:
 		command = ((HSI_LL_MSG_CONN_READY & 0x0000000F) << 28) |
-				  ((channel               & 0x000000FF) << 24);
+				  ((channel               & 0x0000000F) << 24);
 		break;
 	case HSI_LL_MSG_CONN_CLOSED:
 		command = ((HSI_LL_MSG_CONN_CLOSED & 0x0000000F) << 28) |
-				  ((channel                & 0x000000FF) << 24);
+				  ((channel                & 0x0000000F) << 24);
 		break;
 	case HSI_LL_MSG_CANCEL_CONN: {
 		unsigned int role = *(unsigned int*)arg;
 
 		command = ((HSI_LL_MSG_CANCEL_CONN & 0x0000000F) << 28) |
-				  ((channel                & 0x000000FF) << 24) |
+				  ((channel                & 0x0000000F) << 24) |
 				  ((role                   & 0x000000FF) << 16);
 		}
 		break;
@@ -286,19 +302,19 @@ static int hsi_ll_send_command(
 		unsigned int echo_params = *(unsigned int*)arg;
 
 		command = ((HSI_LL_MSG_ACK & 0x0000000F) << 28) |
-				  ((channel        & 0x000000FF) << 24) |
+				  ((channel        & 0x0000000F) << 24) |
 				  ((echo_params    & 0x00FFFFFF));
 		}
 		break;
 	case HSI_LL_MSG_NAK:
 		command = ((HSI_LL_MSG_NAK & 0x0000000F) << 28) |
-				  ((channel        & 0x000000FF) << 24);
+				  ((channel        & 0x0000000F) << 24);
 		break;
 	case HSI_LL_MSG_CONF_RATE: {
 		unsigned int baud_rate = *(unsigned int*)arg;
 
 		command = ((HSI_LL_MSG_CONF_RATE & 0x0000000F) << 28) |
-				  ((channel              & 0x000000FF) << 24) |
+				  ((channel              & 0x0000000F) << 24) |
 				  ((baud_rate            & 0x00FFFFFF));
 		}
 		break;
@@ -306,7 +322,7 @@ static int hsi_ll_send_command(
 		unsigned int size = *(unsigned int*)arg;
 
 		command = ((HSI_LL_MSG_OPEN_CONN_OCTET & 0x0000000F) << 28) |
-				  ((channel                    & 0x000000FF) << 24) |
+				  ((channel                    & 0x0000000F) << 24) |
 				  ((size                       & 0x00FFFFFF));
 		}
 		break;
@@ -325,12 +341,13 @@ static int hsi_ll_send_command(
 	if (ret == 0) {
 		ret = hsi_ll_send_cmd_queue(command, channel, phy_id);
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		if(ret != 0)
-			printk("\nHSI_LL:hsi_ll_send_cmd_queue fail for Channel %d. %s %d\n",
-					  channel, __func__, __LINE__);    
+		if(ret != 0) {
+			printk("\nHSI_LL:hsi_ll_send_cmd_queue fail for Channel %d.%s %d\n",
+					  channel, __func__, __LINE__);
+		}
 	} else {
 		printk("\nHSI_LL:Invalid command issued for Channel %d. %s %d\n",
-				  channel, __func__, __LINE__);    
+				  channel, __func__, __LINE__);
 #endif
 	}
 	spin_unlock_bh(&hsi_ll_if.wr_cmd_lock);
@@ -344,7 +361,7 @@ static void hsi_ll_read_cb(struct hsi_device *dev, unsigned int size)
 	/* Data Rx callback*/
 	if (hsi_ll_data.ch[dev->n_ch].rx.state != HSI_LL_RX_STATE_RX) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:Error. Invalid state for channel %d. %s %d", 
+		printk("\nHSI_LL: Error. Invalid state for channel %d. %s %d",
 				 dev->n_ch, __func__, __LINE__);
 #endif
 		spin_unlock_bh(&hsi_ll_if.rd_cb_lock);
@@ -359,12 +376,18 @@ static void hsi_ll_read_cb(struct hsi_device *dev, unsigned int size)
 			printk("\nHSI_LL:Read close requested for ch %d. %s %d\n",
 					 dev->n_ch,__func__, __LINE__);
 #endif
-			hsi_ll_send_command(HSI_LL_MSG_CANCEL_CONN, dev->n_ch, &role, HSI_LL_PHY_ID_RX);
+			hsi_ll_send_command(HSI_LL_MSG_CANCEL_CONN,
+								dev->n_ch,
+								&role,
+								HSI_LL_PHY_ID_RX);
 
 			temp.buffer = hsi_ll_data.ch[dev->n_ch].rx.buffer;
 			temp.size   = hsi_ll_data.ch[dev->n_ch].rx.size;
 
-			hsi_ll_cb(dev->n_ch, HSI_LL_RESULT_SUCCESS, HSI_LL_EV_FREE_MEM, &temp);
+			hsi_ll_cb(dev->n_ch,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_FREE_MEM,
+					  &temp);
 
 			hsi_ll_data.ch[dev->n_ch].rx.buffer    = NULL;
 			hsi_ll_data.ch[dev->n_ch].rx.close_req = FALSE;
@@ -375,10 +398,16 @@ static void hsi_ll_read_cb(struct hsi_device *dev, unsigned int size)
 			temp_data.buffer = hsi_ll_data.ch[dev->n_ch].rx.buffer;
 			temp_data.size   = hsi_ll_data.ch[dev->n_ch].rx.size;
 
-			hsi_ll_cb(dev->n_ch, HSI_LL_RESULT_SUCCESS, HSI_LL_EV_READ_COMPLETE, &temp_data);
+			hsi_ll_cb(dev->n_ch,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_READ_COMPLETE,
+					  &temp_data);
 
 			hsi_ll_data.ch[dev->n_ch].rx.buffer = NULL;
-			hsi_ll_send_command(HSI_LL_MSG_CONN_CLOSED, dev->n_ch, NULL, HSI_LL_PHY_ID_RX);
+			hsi_ll_send_command(HSI_LL_MSG_CONN_CLOSED,
+								dev->n_ch,
+								NULL,
+								HSI_LL_PHY_ID_RX);
 			hsi_ll_data.ch[dev->n_ch].rx.state = HSI_LL_RX_STATE_IDLE;
 		}
 	}
@@ -388,7 +417,7 @@ static void hsi_ll_read_cb(struct hsi_device *dev, unsigned int size)
 /* Read callback for control channel */
 static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 {
-	int ret; 
+	int ret;
 	unsigned int channel = 0, param = 0, ll_msg_type = 0;
 
 	spin_lock_bh(&hsi_ll_if.rd_cmd_cb_lock);
@@ -396,34 +425,40 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 #if defined (HSI_LL_DATA_MUL_OF_16)
 	hsi_ll_data.rx_cmd = hsi_ll_rx_cmd_data[0];
 #endif
-	ret = hsi_ll_command_decode(&hsi_ll_data.rx_cmd, 
-								&ll_msg_type, 
-								&channel, 
+	ret = hsi_ll_command_decode(&hsi_ll_data.rx_cmd,
+								&ll_msg_type,
+								&channel,
 								&param);
 
 #if defined (HSI_LL_ENABLE_CRITICAL_LOG)
-	printk("\nHSI_LL: CP => AP CMD = 0x%x.\n", hsi_ll_data.rx_cmd);
+	printk("\nHSI_LL: channel %d CP => AP CMD = 0x%x.\n", channel, hsi_ll_data.rx_cmd);
 #endif
-	if (hsi_ll_if.rd_complete_flag == 0) {
+	if (hsi_ll_if.rd_complete_flag != 1) {
 		/* Raise an event */
 		hsi_ll_if.rd_complete_flag = 1;
 		wake_up_interruptible(&hsi_ll_if.rd_complete);
 	}
 
 	if (ret != 0) {
+		hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL: Received Invalid MSG %d from CP for channel %d. %s %d\n", 
+		printk("\nHSI_LL: Received Invalid MSG %d from CP for channel %d. %s %d\n",
 				 ll_msg_type, channel, __func__, __LINE__);
 #endif
-		spin_unlock_bh(&hsi_ll_if.rd_cmd_cb_lock);
-		return;
+		goto quit_rd_cmd_cb;
 	}
 
 	switch(ll_msg_type) {
-    case HSI_LL_MSG_BREAK: {
+	case HSI_LL_MSG_BREAK: {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL:Break received.%s %d\n", __func__, __LINE__);
 #endif
+
+#if 0
+		/* Start RIL recovery */
+		ifx_schedule_cp_dump_or_reset();
+#endif
+
 #if 0 /*TODO: Enable this after glitch issue is identified/resolved. */
 		unsigned int i;
 		for(i=0; i < HSI_LL_MAX_CHANNELS; i++) {
@@ -436,7 +471,10 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 				hsi_ll_data.ch[i].rx.state = HSI_LL_RX_STATE_CLOSED;
 			}
 		}
-		hsi_ll_cb(HSI_LL_CTRL_CHANNEL, HSI_LL_RESULT_IO_ERROR, HSI_LL_EV_RESET_MEM, NULL);
+		hsi_ll_cb(HSI_LL_CTRL_CHANNEL,
+				  HSI_LL_RESULT_IO_ERROR,
+				  HSI_LL_EV_RESET_MEM,
+				  NULL);
 #endif
 		}
 		break;
@@ -449,7 +487,7 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 	case HSI_LL_MSG_OPEN_CONN: {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL:HSI_LL_MSG_OPEN_CONN Not supported.%s %d.\n",
-                  __func__, __LINE__);
+					__func__, __LINE__);
 #endif
 		}
 		break;
@@ -469,7 +507,10 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 			printk("\nHSI_LL: Data transfer over channel %d completed. %s %d\n",
 					  channel, __func__, __LINE__);
 #endif
-			hsi_ll_cb(channel, HSI_LL_RESULT_SUCCESS, HSI_LL_EV_WRITE_COMPLETE, &temp);
+			hsi_ll_cb(channel,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_WRITE_COMPLETE,
+					  &temp);
 			}
 			break;
 		default:
@@ -496,75 +537,93 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 
 			HSI_LL_GET_SIZE_IN_WORDS(size);
 
-			ret = hsi_write(hsi_ll_data.dev[channel], hsi_ll_data.ch[channel].tx.buffer, size);
+			ret = hsi_write(hsi_ll_data.dev[channel],
+							hsi_ll_data.ch[channel].tx.buffer,
+							size);
 
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
-			if (ret!=0)
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			if (ret!=0) {
 				printk("\nHSI_LL:hsi_write failed for channel %d with error %d. %s %d\n",
 						 channel, ret, __func__, __LINE__);
-#endif						
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)
-			else
+			} else {
 				printk("\nHSI_LL: Transferring data over channel %d. %s %d\n",
-						 channel, __func__, __LINE__); 
+						 channel, __func__, __LINE__);
+			}
 #endif
-				hsi_ll_start_tx_timer(channel, 10); /*TODO: Calculate actual time based on the transfer size*/
+			/*TODO: Calculate actual time based on the transfer size*/
+			hsi_ll_start_tx_timer(channel, 10);
 		}
 		break;
 		case HSI_LL_TX_STATE_CLOSED: { /* ACK as response to CANCEL_CONN */
 			if (hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_WAIT_FOR_CANCEL_CONN_ACK) {
 				hsi_ll_stop_tx_timer(channel);
 				hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_CLOSED;
-			}
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-            else
+			} else {
 				printk("\nHSI_LL: Error. %s %d\n", __func__, __LINE__);
 #endif
 			}
+			}
 			break;
-		case HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK: { /* ACK as response to CONF_RATE */
+		/* ACK as response to CONF_RATE */
+		case HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK: {
 			hsi_ll_stop_tx_timer(channel);
-			//TODO:Complete this
+			/* TODO:Complete this */
+
 			}
 			break;
 		default:
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 			printk("\nHSI_LL:Error.Invalid state. Current channel %d state %d. %s %d\n",
-					 channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+				channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
 #endif
 			break;
 			}
 		}
 		break;
 	case HSI_LL_MSG_NAK:{
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
 		printk("\nHSI_LL:NAK received for channel %d state %d. retry %d %s %d\n",
-				 channel, hsi_ll_data.ch[channel].tx.state,hsi_ll_data.ch[channel].tx.retry,  __func__, __LINE__);
+				 channel, hsi_ll_data.ch[channel].tx.state,
+				 hsi_ll_data.ch[channel].tx.retry,  __func__, __LINE__);
 #endif
 		switch(hsi_ll_data.ch[channel].tx.state) {
 			case HSI_LL_TX_STATE_OPEN_CONN: {
 				hsi_ll_stop_tx_timer(channel);
 				hsi_ll_data.ch[channel].tx.retry++;
-			
+
 				if (hsi_ll_data.ch[channel].tx.retry == HSI_LL_MAX_OPEN_CONN_RETRIES) {
 					struct hsi_ll_rx_tx_data temp;
 					temp.buffer = hsi_ll_data.ch[channel].tx.buffer;
 					temp.size   = hsi_ll_data.ch[channel].tx.size;
 					hsi_ll_data.ch[channel].tx.state  = HSI_LL_TX_STATE_IDLE;
 					hsi_ll_data.ch[channel].tx.buffer = NULL;
-					hsi_ll_cb(channel, 
-							  HSI_LL_RESULT_ERROR, 
-							  HSI_LL_EV_WRITE_COMPLETE, 
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+					printk("\nHSI_LL: %d retry attempts failed, droping packet for channel %d\n ",
+						hsi_ll_data.ch[channel].tx.retry, channel);
+#endif
+					hsi_ll_cb(channel,
+							  HSI_LL_RESULT_ERROR,
+							  HSI_LL_EV_WRITE_COMPLETE,
 							 &temp);
 				} else {
-					hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET, 
-										channel, 
+#if !defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+					hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET,
+										channel,
 									   &hsi_ll_data.ch[channel].tx.size,
 										HSI_LL_PHY_ID_TX);
-				}
+#else
+					/* In NAK case Modem needs some delay  */
+					PREPARE_WORK(&hsi_ll_data.ch[channel].tx.retry_work,
+								  hsi_ll_retry_work);
+					queue_work(hsi_ll_if.hsi_tx_retry_wq,
+							  &hsi_ll_data.ch[channel].tx.retry_work);
+#endif
+					}
 				}
 				break;
-			case HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK: { /* NAK as response to CONF_RATE */
+			/* NAK as response to CONF_RATE */
+			case HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK: {
 				hsi_ll_stop_tx_timer(channel);
 				/* TODO:Complete this */
 				/* hsi_ll_data.tx_if.cfg.new_data_rate_valid = FALSE; */
@@ -574,13 +633,12 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 			default:
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 				printk("\nHSI_LL:Error. Invalid state. Current channel %d state %d. %s %d\n",
-						  channel, hsi_ll_data.ch[channel].tx.state, __func__, __LINE__);
+				channel, hsi_ll_data.ch[channel].tx.state, __func__, __LINE__);
 #endif
 				break;
 		}
 		}
 		break;
-
 	case HSI_LL_MSG_CONF_RATE:
 		/* TODO: Complete this */
 		break;
@@ -591,21 +649,42 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 				temp_data.buffer  = NULL;
 				temp_data.size    = hsi_ll_data.ch[channel].rx.size = param;
 
-				HSI_LL_GET_SIZE_IN_BYTES(temp_data.size);
+				hsi_ll_data.ch[channel].rx.nak_sent = 0;
 
-				hsi_ll_cb(channel, HSI_LL_RESULT_SUCCESS, HSI_LL_EV_ALLOC_MEM, &temp_data);
+				/*Make sure requested memory size is multiple of word as read
+				  is always in multiple of words. */
+				if(temp_data.size & 0x03) {
+					temp_data.size += (4 - (temp_data.size & 0x03));
+				}
+
+				hsi_ll_cb(channel,
+						  HSI_LL_RESULT_SUCCESS,
+						  HSI_LL_EV_ALLOC_MEM,
+						  &temp_data);
 
 				if (temp_data.buffer == NULL) {
-					hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
+#if defined (HSI_LL_ENABLE_RX_BUF_RETRY_WQ)
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+					printk("\nHSI_LL: Could not get mem (size=%d)for channel %d, so currently blocking this ch\n",
+							temp_data.size,channel);
+#endif
+					hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_BLOCKED;
+					goto quit_rd_cmd_cb;
+#else
+					hsi_ll_send_command(HSI_LL_MSG_NAK,
+										channel,
+										NULL,
+										HSI_LL_PHY_ID_RX);
+#endif
 				} else {
-					unsigned int echo_param = param;
-					unsigned int *buf = hsi_ll_data.ch[channel].rx.buffer = temp_data.buffer;
-					unsigned int size = temp_data.size;
-
-					hsi_ll_send_command(HSI_LL_MSG_ACK, channel, &echo_param, HSI_LL_PHY_ID_RX);
-
+					unsigned int size = hsi_ll_data.ch[channel].rx.size;
+					unsigned int *buf = temp_data.buffer;
+					hsi_ll_data.ch[channel].rx.buffer = temp_data.buffer;
+					hsi_ll_send_command(HSI_LL_MSG_ACK,
+										channel,
+										&size,
+										HSI_LL_PHY_ID_RX);
 					HSI_LL_GET_SIZE_IN_WORDS(size);
-
 					/* TODO: Calculate actual time based on the amount of transfer*/
 					hsi_ll_start_rx_timer(channel, 20);
 					hsi_read(hsi_ll_data.dev[channel], buf, size);
@@ -613,16 +692,54 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 				}
 			}
 			break;
+/* P2 issue : CP Open Conn Retry Workaround  : NAK stops retry open conn timer */
+#if defined (HSI_LL_ENABLE_RX_BUF_RETRY_WQ)
 		case HSI_LL_RX_STATE_BLOCKED: {
-			hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
-			hsi_ll_start_rx_timer(channel, HSI_LL_RX_T_ACK_NACK_MS);
-			hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_SEND_NACK;
+			if (hsi_ll_data.ch[channel].rx.nak_sent == 0) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:Error: Resend open_conn from CP. send NAK Current channel %d state %d. %s %d\n",
+						channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+#endif
+				hsi_ll_data.ch[channel].rx.nak_sent = 1;
+				hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
+				hsi_ll_start_rx_timer(channel, HSI_LL_RX_T_ACK_NACK_MS);
+			}
+			else {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:Error: Resend open_conn from CP. Already sent NAK channel %d state %d. %s %d\n",
+					channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+#endif
+			}
 			}
 			break;
+#endif
+			
+/* P2 issue : CP Open Conn Retry Workaround  : NAK stops retry open conn timer */
+#if 1
+		case HSI_LL_RX_STATE_RX:
+			if (hsi_ll_data.ch[channel].rx.nak_sent == 0) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:Error: Resend open_conn from CP. send NAK Current channel %d state %d. %s %d\n",
+						channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+#endif
+				hsi_ll_data.ch[channel].rx.nak_sent = 1;
+				hsi_ll_send_command(HSI_LL_MSG_NAK, channel, NULL, HSI_LL_PHY_ID_RX);
+				hsi_ll_start_rx_timer(channel, HSI_LL_RX_T_ACK_NACK_MS);
+			}
+			else {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:Error: Resend open_conn from CP. Already sent NAK channel %d state %d. %s %d\n",
+					channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+#endif
+			}
+			
+			break;
+#endif
+
          default:
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 			printk("\nHSI_LL:Error.Invalid state. Current channel %d state %d. %s %d\n",
-					  channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
+				channel,hsi_ll_data.ch[channel].rx.state, __func__, __LINE__);
 #endif
 			break;
 		}
@@ -635,8 +752,37 @@ static void hsi_ll_read_complete_cb(struct hsi_device *dev, unsigned int size)
 #endif
 		break;
 	}
+quit_rd_cmd_cb:
 	spin_unlock_bh(&hsi_ll_if.rd_cmd_cb_lock);
 }
+
+/* TX Retry Work Queue */
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+static void hsi_ll_retry_work(struct work_struct *work)
+{
+	struct hsi_ll_tx_ch *tx_ch= (struct hsi_ll_tx_ch*) container_of(work, struct hsi_ll_tx_ch,retry_work);
+	unsigned int channel = tx_ch->channel;
+
+	if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+		printk("\nHSI_LL: hsi_ll_retry_work - HSI_LL_IF_STATE_ERR_RECOVERY.\n");
+#endif
+		return;
+	}
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: retrying Open_connect for ch %d. Size %d. Retry count %d\n",
+			channel, hsi_ll_data.ch[channel].tx.size,
+			hsi_ll_data.ch[channel].tx.retry);
+#endif
+	udelay(100); /*If required Fine tune this delay*/
+	hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET,
+						channel,
+					   &hsi_ll_data.ch[channel].tx.size,
+						HSI_LL_PHY_ID_TX);
+	return;
+}
+#endif
 
 /* Write callback for channels 1 to 15 */
 static void hsi_ll_write_cb(struct hsi_device *dev, unsigned int size)
@@ -663,7 +809,9 @@ static void hsi_ll_write_cb(struct hsi_device *dev, unsigned int size)
 		printk("\nHSI_LL: Data transfer over channel %d completed. %s %d\n",
 				  dev->n_ch, __func__, __LINE__);
 #endif
-		hsi_ll_cb(dev->n_ch, HSI_LL_RESULT_SUCCESS, HSI_LL_EV_WRITE_COMPLETE, &temp);
+		hsi_ll_cb(dev->n_ch, HSI_LL_RESULT_SUCCESS,
+				  HSI_LL_EV_WRITE_COMPLETE,
+				 &temp);
 		}
 		break;
 	}
@@ -674,18 +822,13 @@ static void hsi_ll_write_cb(struct hsi_device *dev, unsigned int size)
 /* Write callback for control channel */
 static void hsi_ll_write_complete_cb(struct hsi_device *dev, unsigned int size)
 {
-	unsigned int phy_id;
-	unsigned int channel;
-  
+	spin_lock_bh(&hsi_ll_if.wr_cmd_cb_lock);
+
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 	printk("\nHSI_LL:Write Complete callback.%s %d\n", __func__, __LINE__);
 #endif
-	spin_lock_bh(&hsi_ll_if.wr_cmd_cb_lock);
 
-	phy_id  = hsi_ll_data.tx_cmd.phy_id;
-	channel = hsi_ll_data.tx_cmd.channel;
-
-	if (hsi_ll_if.wr_complete_flag == 0) {
+	if (hsi_ll_if.wr_complete_flag != 1) {
 		/* Raise an event */
 		hsi_ll_if.wr_complete_flag = 1;
 		hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_TX_STATE_IDLE;
@@ -697,13 +840,13 @@ static void hsi_ll_write_complete_cb(struct hsi_device *dev, unsigned int size)
 
 static int hsi_ll_create_rx_thread(void)
 {
-	hsi_ll_if.rd_th = kthread_run(hsi_ll_rd_ctrl_ch_th, 
-								  NULL, 
+	hsi_ll_if.rd_th = kthread_run(hsi_ll_rd_ctrl_ch_th,
+								  NULL,
 								 "hsi_ll_rd_ctrlch");
 
 	if (IS_ERR(hsi_ll_if.rd_th)) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:Cannot create read ctrl Thread.%s %d\n", 
+		printk("\nHSI_LL:Cannot create read ctrl Thread.%s %d\n",
 				  __func__, __LINE__);
 #endif
 		hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
@@ -713,39 +856,9 @@ static int hsi_ll_create_rx_thread(void)
 	return 0;
 }
 
-static int hsi_ll_wr_ctrl_ch_th(void *data)
+static int hsi_ll_config_bus(void)
 {
-	int ret,i;
-
-	wait_event_interruptible(hsi_ll_if.reg_complete, 
-							 hsi_ll_if.reg_complete_flag == 1);
-
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)
-	printk("\nHSI_LL:Write thread Started.%s %d\n", __func__, __LINE__);
-#endif  
-	ret = hsi_ll_open(HSI_LL_CTRL_CHANNEL);
-
-	if (ret) {
-#if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:Error while opening CTRL channel %d.%s %d", 
-				  ret, __func__, __LINE__);
-#endif
-		ret = HSI_LL_RESULT_INIT_ERROR;
-		hsi_ll_data.initialized = FALSE;
-		hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
-
-		return -1;
-	}
-
-	for(i=1; i < HSI_LL_MAX_CHANNELS; i++) {
-	    /*Note: This is just a WA to receive packets on channels that 
-		        are not opened by application, with this WA it is possible
-				to receive and drop broadcast packets on channels 
-				close/not opened by application */
-		ret = hsi_ll_open(i);
-		if (ret != 0)
-			printk("HSI_LL: Error opening Channel %d,err=%d", i, ret);
-	}
+	int ret = HSI_LL_RESULT_SUCCESS;
 
 	hsi_ll_data.rx_cfg.ctx.mode       = HSI_LL_INTERFACE_MODE;
 	hsi_ll_data.rx_cfg.ctx.flow       = HSI_LL_RECEIVER_MODE;
@@ -755,17 +868,16 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 	hsi_ll_data.rx_cfg.ctx.channels   = HSI_LL_MAX_CHANNELS;
 
 	ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
-					HSI_IOCTL_SET_RX, 
-				    &hsi_ll_data.rx_cfg.ctx);
+					HSI_IOCTL_SET_RX,
+					&hsi_ll_data.rx_cfg.ctx);
 
 	if (ret) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL:RX config error %d. %s %d\n", ret, __func__, __LINE__);
-#endif 
+#endif
 		ret = HSI_LL_RESULT_INIT_ERROR;
 		hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
-
-		return -1;
+		return HSI_LL_RESULT_ERROR;
 	}
 
 	hsi_ll_data.tx_cfg.ctx.mode       = HSI_LL_INTERFACE_MODE;
@@ -776,20 +888,63 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 	hsi_ll_data.tx_cfg.ctx.channels   = HSI_LL_MAX_CHANNELS;
 
 	ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
-					HSI_IOCTL_SET_TX, 
+					HSI_IOCTL_SET_TX,
 					&hsi_ll_data.tx_cfg.ctx);
 
 	if (ret) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:TX config error %d. %s %d\n", ret, __func__, __LINE__);
+		printk("\nHSI_LL:TX config error %d.%s %d\n", ret, __func__, __LINE__);
 #endif
 		ret = HSI_LL_RESULT_INIT_ERROR;
+		hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
+		return HSI_LL_RESULT_ERROR;
+	}
+	return ret;
+}
+
+static int hsi_ll_wr_ctrl_ch_th(void *data)
+{
+	int ret, i;
+	unsigned int command, channel;
+	unsigned int phy_id;
+
+	wait_event_interruptible(hsi_ll_if.reg_complete,
+							 hsi_ll_if.reg_complete_flag == 1);
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL:Write thread Started.%s %d\n", __func__, __LINE__);
+#endif
+	ret = hsi_ll_open(HSI_LL_CTRL_CHANNEL);
+
+	if (ret) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+		printk("\nHSI_LL:Error while opening CTRL channel %d.%s %d",
+				  ret, __func__, __LINE__);
+#endif
+		ret = HSI_LL_RESULT_INIT_ERROR;
+		hsi_ll_data.initialized = FALSE;
 		hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
 
 		return -1;
 	}
 
-	hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH); //for Testing purpose only
+	for(i=1; i < HSI_LL_MAX_CHANNELS; i++) {
+		/*Note: This is just a WA to receive packets on channels that
+				are not opened by application, with this WA it is possible
+				to receive and drop broadcast packets on channels
+				close/not opened by application */
+		ret = hsi_ll_open(i);
+		if (ret != 0)
+			printk("HSI_LL: Error opening Channel %d,err=%d", i, ret);
+	}
+	
+	ret = hsi_ll_config_bus();
+
+	if(ret) {
+		return -1;
+	}
+
+	hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH);
 
 	ret = hsi_ll_create_rx_thread();
 
@@ -803,36 +958,79 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 	}
 
 	hsi_ll_if.msg_avaliable_flag = 0;
-	wait_event_interruptible(hsi_ll_if.msg_avaliable, 
+	wait_event_interruptible(hsi_ll_if.msg_avaliable,
 							 hsi_ll_if.msg_avaliable_flag == 1);
 	while(1) {
-		unsigned int command, channel;
-		unsigned int phy_id;
 
 		hsi_ll_if.msg_avaliable_flag = 0;
 
-		while(HSI_LL_RESULT_QUEUE_EMPTY == hsi_ll_read_cmd_queue(&command, 
-																 &channel, 
+		if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY) {
+#if 1 //defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("\nHSI_LL: First Stop CMD transfer till recovery completes.\n");
+#endif
+			wait_event_interruptible(hsi_ll_if.wr_complete,
+								hsi_ll_if.wr_complete_flag == 2);
+			hsi_ll_if.wr_complete_flag = 0;
+
+#if 1 //defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("HSI_LL: First HSI LL recovery completed .Start CMD transfer\n");
+#endif
+		}
+
+		while(HSI_LL_RESULT_QUEUE_EMPTY == hsi_ll_read_cmd_queue(&command,
+																 &channel,
 																 &phy_id)) {
 #if defined (HSI_LL_ENABLE_PM)
-			wait_event_interruptible_timeout(hsi_ll_if.msg_avaliable, 
+			wait_event_interruptible_timeout(hsi_ll_if.msg_avaliable,
 											 hsi_ll_if.msg_avaliable_flag == 1,
-											 20);
+											 HSI_LL_PV_READ_CMD_Q_TIMEOUT);
 			if (hsi_ll_if.msg_avaliable_flag == 0) {
-				hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_ENABLE;
-				wake_up_interruptible(&hsi_ll_if.psv_event);
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
-				printk("\nHSI_LL: PSV enable requested.\n");
+				printk("HSI_LL: HSI LL msg_avaliable_flag == 0\n");
 #endif
+
+				if(hsi_ll_data.state == HSI_LL_IF_STATE_READY)
+				{
+					hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_ENABLE;
+					wake_up_interruptible(&hsi_ll_if.psv_event);
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+					printk("\nHSI_LL: PSV enable requested.\n");
 #endif
-				wait_event_interruptible(hsi_ll_if.msg_avaliable, 
+				}
+#endif
+				wait_event_interruptible(hsi_ll_if.msg_avaliable,
 										 hsi_ll_if.msg_avaliable_flag == 1);
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+				printk("HSI_LL: HSI LL msg_avaliable_flag0 == 1\n");
+#endif
+
 #if defined (HSI_LL_ENABLE_PM)
 			}
+			else {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+				printk("HSI_LL: HSI LL msg_avaliable_flag1 == 1\n");
+#endif
+			}
+			
 			hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
 			hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_TX_STATE_UNDEF;
 #endif
 			hsi_ll_if.msg_avaliable_flag = 0;
+		}
+
+		if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY) {
+#if 1 //defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("\nHSI_LL: Second Stop CMD transfer till recovery completes.\n");
+#endif
+			wait_event_interruptible(hsi_ll_if.wr_complete,
+								hsi_ll_if.wr_complete_flag == 2);
+
+			hsi_ll_if.wr_complete_flag = 0;
+
+#if 1 //defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("HSI_LL: Second HSI LL recovery completed .Start CMD transfer\n");
+#endif
+			continue;
 		}
 
 		/* Wakeup Other Side */
@@ -843,24 +1041,31 @@ static int hsi_ll_wr_ctrl_ch_th(void *data)
 			hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_HIGH);
 		}
 #if defined (HSI_LL_ENABLE_CRITICAL_LOG)
-		printk("\nHSI_LL: AP => CP CMD = 0x%x \n", command);
+		printk("\nHSI_LL: channel %d : AP => CP CMD = 0x%x \n", channel, command);
 #endif
 		hsi_ll_data.tx_cmd.channel = channel;
 		hsi_ll_data.tx_cmd.phy_id  = phy_id;
+
+		hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_TX_STATE_TX;
+
 #if !defined(HSI_LL_DATA_MUL_OF_16)
-		ret = hsi_write(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], &command, 1);
+		ret = hsi_write(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+						&command,
+						1);
 #else
 		hsi_ll_tx_cmd_data[0] = command;
-		ret = hsi_write(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], hsi_ll_tx_cmd_data, 4);
+		ret = hsi_write(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+						hsi_ll_tx_cmd_data,
+						4);
 #endif
 
-#if defined (HSI_LL_ENABLE_CRITICAL_LOG)
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
 		if (ret != 0) {
 			printk("\nHSI_LL: hsi_write(...) failed for ctrl chanel, err=%d. %s %d",
 					 ret, __func__, __LINE__);
 		}
 #endif
-		wait_event_interruptible(hsi_ll_if.wr_complete, 
+		wait_event_interruptible(hsi_ll_if.wr_complete,
 								 hsi_ll_if.wr_complete_flag == 1);
 		hsi_ll_if.wr_complete_flag = 0;
 	}
@@ -876,10 +1081,25 @@ static int hsi_ll_rd_ctrl_ch_th(void *data)
 #endif
 
 	while(1) {
+		if (hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("\nHSI_LL: Stop CMD reception till recovery completes.\n");
+#endif
+			wait_event_interruptible(hsi_ll_if.rd_complete,
+						 hsi_ll_if.rd_complete_flag == 2);
+			hsi_ll_if.rd_complete_flag = 0;
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("HSI_LL: HSI LL recovery completed .Start CMD reception\n");
+#endif
+		}
 #if !defined(HSI_LL_DATA_MUL_OF_16)
-		ret = hsi_read(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], &hsi_ll_data.rx_cmd, 1);
+		ret = hsi_read(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+					  &hsi_ll_data.rx_cmd,
+					  1);
 #else
-		ret = hsi_read(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], hsi_ll_rx_cmd_data, 4);
+		ret = hsi_read(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+					   hsi_ll_rx_cmd_data,
+					   4);
 #endif
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		if (ret) {
@@ -887,7 +1107,7 @@ static int hsi_ll_rd_ctrl_ch_th(void *data)
 					  ret, __func__, __LINE__);
 		}
 #endif
-		wait_event_interruptible(hsi_ll_if.rd_complete, 
+		wait_event_interruptible(hsi_ll_if.rd_complete,
 								 hsi_ll_if.rd_complete_flag == 1);
 		hsi_ll_if.rd_complete_flag = 0;
 	}
@@ -901,6 +1121,29 @@ static int hsi_ll_rd_ctrl_ch_th(void *data)
  * @char: pointer to buffer.
  * @size: Number of bytes to be transferred.
  */
+void hsi_ll_reset_write_channel(int channel)
+{
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+	printk("\nHSI_LL: channel 0. state %d %s %d\n", 
+		hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state, __func__, __LINE__);
+
+	printk("\nHSI_LL: channel %d. state %d %s %d\n", channel, 
+		hsi_ll_data.ch[channel].tx.state, __func__, __LINE__);
+#endif
+
+	hsi_write_cancel(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL]);
+	hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_RX_STATE_IDLE;
+
+	hsi_write_cancel(hsi_ll_data.dev[channel]);
+
+	hsi_ll_if.wr_complete_flag = 1;
+	wake_up_interruptible(&hsi_ll_if.wr_complete);
+
+	hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_IDLE;
+	hsi_ll_data.ch[channel].tx.buffer = NULL;
+	hsi_ll_data.ch[channel].tx.size = 0;
+}
+
 int hsi_ll_write(int channel, unsigned char *buf, unsigned int size)
 {
 	int ret = HSI_LL_RESULT_SUCCESS;
@@ -936,15 +1179,14 @@ int hsi_ll_write(int channel, unsigned char *buf, unsigned int size)
 	hsi_ll_data.ch[channel].tx.buffer = buf;
 	hsi_ll_data.ch[channel].tx.size   = size;
 
-	if (hsi_ll_data.ch[channel].tx.state == HSI_LL_TX_STATE_IDLE    &&
-	   hsi_ll_data.state                != HSI_LL_IF_STATE_CONFIG) {
-		
+	if ((hsi_ll_data.ch[channel].tx.state == HSI_LL_TX_STATE_IDLE)  &&
+		(hsi_ll_data.state				!= HSI_LL_IF_STATE_CONFIG)) {
+
 		hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_OPEN_CONN;
 		hsi_ll_data.ch[channel].tx.retry = 0;
-
-		ret = hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET, 
-								  channel, 
-								  &size, 
+		ret = hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET,
+								  channel,
+								  &size,
 								  HSI_LL_PHY_ID_TX);
 
 		if (ret != HSI_LL_RESULT_SUCCESS) {
@@ -967,7 +1209,6 @@ int hsi_ll_write(int channel, unsigned char *buf, unsigned int size)
 	}
 quit_write:
 	mutex_unlock(&hsi_ll_write_mutex);
-
 	return ret;
 }
 
@@ -993,8 +1234,8 @@ int hsi_ll_open(int channel)
 	}
 
 	if (hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY ||
-	   hsi_ll_data.state == HSI_LL_IF_STATE_PERM_ERROR   ||
-	   hsi_ll_data.state == HSI_LL_IF_STATE_UN_INIT) {
+		hsi_ll_data.state == HSI_LL_IF_STATE_PERM_ERROR   ||
+		hsi_ll_data.state == HSI_LL_IF_STATE_UN_INIT) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL: Invalid state for channel %d. %s %d\n",
 				  channel, __func__, __LINE__);
@@ -1006,6 +1247,8 @@ int hsi_ll_open(int channel)
 	hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_IDLE;
 	hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_IDLE;
 
+	hsi_ll_data.ch[channel].rx.nak_sent = 0;
+
 	if (0 > hsi_open(hsi_ll_data.dev[channel])) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 		printk("\nHSI_LL:Could not open channel %d.%s %d\n",
@@ -1013,12 +1256,15 @@ int hsi_ll_open(int channel)
 #endif
 		ret = HSI_LL_RESULT_ERROR;
 	} else {
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+		hsi_ll_data.ch[channel].tx.channel = channel;
+		INIT_WORK(&hsi_ll_data.ch[channel].tx.retry_work, hsi_ll_retry_work);
+#endif
 		hsi_ll_data.ch[channel].open = TRUE;
 	}
 
 quit_open:
 	mutex_unlock(&hsi_ll_open_mutex);
-
 	return ret;
 }
 
@@ -1033,36 +1279,34 @@ int hsi_ll_close(int channel)
 	mutex_lock(& hsi_ll_close_mutex);
 
 	if (hsi_ll_data.state == HSI_LL_IF_STATE_PERM_ERROR ||
-	   hsi_ll_data.state == HSI_LL_IF_STATE_UN_INIT) {
+		hsi_ll_data.state == HSI_LL_IF_STATE_UN_INIT) {
 		ret = HSI_LL_RESULT_ERROR;
 		goto quit_close;
 	}
 #if 0
-    /*NOTE: Below code block is commented as a WA. This is done to ensure that 
-	        all hsi channels are kept open all the time so that 
+	/*NOTE: Below code block is commented as a WA. This is done to ensure that
+			all hsi channels are kept open all the time so that
 			broadcast messages from CP are not blocked */
-	if (hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_IDLE       ||
-	   hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_POWER_DOWN) {
+	if ((hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_IDLE)		||
+		(hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_POWER_DOWN)) {
 		if (channel == 0) {
 			/* wait until end of transmission */
 			hsi_ll_data.ch[channel].rx.close_req = TRUE;
 		} else if (hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_RX) {
 			int role = HSI_LL_ROLE_RECEIVER;
-
-			hsi_ll_send_command(HSI_LL_MSG_CANCEL_CONN, 
-								channel, 
-								&role, 
-							    HSI_LL_PHY_ID_RX);
+			hsi_ll_send_command(HSI_LL_MSG_CANCEL_CONN,
+								channel,
+								&role,
+								HSI_LL_PHY_ID_RX);
 			hsi_ll_start_rx_timer(channel, HSI_LL_RX_T_CANCEL_CONN_MS);
-			hsi_ll_cb(channel, 
-					  HSI_LL_RESULT_SUCCESS, 
-					  HSI_LL_EV_FREE_MEM, 
+			hsi_ll_cb(channel,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_FREE_MEM,
 					  hsi_ll_data.ch[channel].rx.buffer);
-
 			hsi_ll_data.ch[channel].rx.buffer    = NULL;
 			hsi_ll_data.ch[channel].rx.close_req = FALSE;
 			hsi_ll_data.ch[channel].rx.state     = HSI_LL_RX_STATE_SEND_CONN_CANCEL;
-		} else if (hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_SEND_ACK    ||
+		} else if (hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_SEND_ACK   ||
 			hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_SEND_NACK         ||
 			hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_SEND_CONN_READY   ||
 			hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_SEND_CONN_CLOSED) {
@@ -1071,18 +1315,15 @@ int hsi_ll_close(int channel)
 	} else {
 		hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_CLOSED;
 	}
-	/* Upper layers should take care that noting is sent on this channel till it is opened again*/
+	/* Upper layers should take care that noting is
+		sent on this channel till it is opened again*/
 	hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_CLOSED;
-
 	hsi_close(hsi_ll_data.dev[channel]);
-
 	hsi_ll_data.ch[channel].open = FALSE;
-
 #endif
 
 quit_close:
 	mutex_unlock(&hsi_ll_close_mutex);
-
 	return HSI_LL_RESULT_SUCCESS;
 }
 
@@ -1090,76 +1331,144 @@ static void hsi_ll_wakeup_cp(unsigned int val)
 {
 	int ret = -1;
 
+	mutex_lock(&hsi_ll_psv);
+
 	if (val == HSI_LL_WAKE_LINE_HIGH) {
-		ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], HSI_IOCTL_ACWAKE_UP, NULL);
 		hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_HIGH;
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)	  
+		ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+						HSI_IOCTL_ACWAKE_UP,
+						NULL);
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
 		printk("HSI_LL:Setting AC wake line to HIGH.\n");
 #endif
 	} else {
-		ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL], HSI_IOCTL_ACWAKE_DOWN, NULL);
-		hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_LOW;
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)	  	  
-		printk("HSI_LL:Setting AC wake line to LOW .\n");
+		if(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_DISABLE) {
+			printk("\nHSI_LL: PSV revoked%s %d\n",
+					 __func__, __LINE__);
+			ret = 0;
+		} else {
+			hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_LOW;
+			ret = hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
+							HSI_IOCTL_ACWAKE_DOWN,
+							NULL);
+			hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("HSI_LL:Setting AC wake line to LOW .\n");
 #endif
+		}
 	}
-
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 	if (ret) {
-		printk("\nHSI_LL:Error setting AC wakeup/DOWN line %d. %s %d\n",
+		printk("\nHSI_LL:Error setting AC_WAKE line err=%d. %s %d\n",
 				  ret, __func__, __LINE__);
 	}
 #endif
+	mutex_unlock(&hsi_ll_psv);
 
 	return;
 }
 
-/* 
+/*
  * Processes wakeup
  */
 #if defined (HSI_LL_ENABLE_PM)
+
+#define HSI_LL_PSV_TRY_MAX_COUNT 200
+#define HSI_LL_PSV_TRY_COUNT_DEBUG_PRINT 100
+
 static int hsi_ll_psv_th(void *data)
 {
 	unsigned int psv_done = 0;
 	unsigned int channel = 0;
-	
+	unsigned int try_count = 0;
+
 	while(1) {
-		wait_event_interruptible(hsi_ll_if.psv_event, hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_ENABLE);
+
+		if((hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
+			||(try_count == HSI_LL_PSV_TRY_MAX_COUNT))
+		{
+			wait_event_interruptible_timeout(hsi_ll_if.psv_event,
+						(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_RESTART)
+						, HSI_LL_PV_RESTART_CMD_Q_TIMEOUT);
+
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+			printk("\nHSI_LL:PSV_Enable restart. HSI_LL_PSV_EVENT_PSV_RESTART\n");
+#endif
+		}
+
+		wait_event_interruptible(hsi_ll_if.psv_event,
+					(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_ENABLE));
+
 		psv_done = 0;
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+		try_count = 0;
+#endif
 
 		do{
-			if (hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_DISABLE) {
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)			
-				printk("\nHSI_LL:PSV_Enable Revoked.\n");
+			if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
+			{
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:PSV_Enable Stop because of crash or HSI_LL_IF_STATE_ERR_RECOVERY.\n");
 #endif
-				break;
+				psv_done = 1;
 			}
 
+			if(hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_DISABLE) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+				printk("\nHSI_LL:PSV_Enable Revoked.\n");
+#endif
+				psv_done = 1;
+			}
+
+#if 0 /* Check TX state only */
 			for(channel = 0; channel < HSI_LL_MAX_CHANNELS; channel++) {
 				if (hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_IDLE) {
-#if defined (HSI_LL_ENABLE_CRITICAL_LOG)					
-					printk("\nHSI_LL:PSV_Enable - Channel[%d] is busy with status %d, retry after 200ms.\n", 
-					       	  channel,hsi_ll_data.ch[channel].tx.state);
-#endif					
-					msleep_interruptible(200);
+#if defined (HSI_LL_ENABLE_CRITICAL_LOG)
+					printk("\nHSI_LL:PSV_Enable - Channel[%d] is busy with status %d, retry after a little sleep.\n",
+							channel,hsi_ll_data.ch[channel].tx.state);
+#endif
+					msleep_interruptible(HSI_LL_PV_THREAD_SLEEP_TIME);
 					break;
 				}
 			}
+#else /* PSV mode enhancement : check TX & RX state */
+			for(channel = 0; channel < HSI_LL_MAX_CHANNELS; channel++) {
+				if ((hsi_ll_data.ch[channel].tx.state != HSI_LL_TX_STATE_IDLE) ||
+					(hsi_ll_data.ch[channel].rx.state != HSI_LL_RX_STATE_IDLE)){
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+					if((try_count != 0) && (try_count % HSI_LL_PSV_TRY_COUNT_DEBUG_PRINT == 0)) {
+						printk("\nHSI_LL:PSV_Enable - Channel[%d] is busy with TX status %d and RX status %d and retry after a little sleep with try count %d th.\n",
+						channel, hsi_ll_data.ch[channel].tx.state, hsi_ll_data.ch[channel].rx.state, try_count);
+					}
+#endif
+					try_count++;
+					msleep_interruptible(HSI_LL_PV_THREAD_SLEEP_TIME);
+					break;
+				}
+			}
+#endif
 
 			if (channel >= HSI_LL_MAX_CHANNELS) {
 				/* All are idle. Check if PSV can be Enabled */
 				if (hsi_ll_if.psv_event_flag == HSI_LL_PSV_EVENT_PSV_ENABLE) {
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 					printk("\nHSI_LL: Requesting to set AC wake line to low.\n");
-#endif		        
-					hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
+#endif
 					hsi_ll_wakeup_cp(HSI_LL_WAKE_LINE_LOW);
 					psv_done = 1;
 				}
 			}
+
+			if(try_count == HSI_LL_PSV_TRY_MAX_COUNT) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+				printk("\nHSI_LL:PSV_Enable Stop because of abnormal case of Modem. HSI_LL_PSV_TRY_MAX_COUNT\n");
+#endif
+				psv_done = 1;
+			}
+			
 		} while(!psv_done);
 	}
-	
+
 	return 1;
 }
 #endif
@@ -1281,26 +1590,19 @@ static void hsi_ll_stop_tx_timer(unsigned int channel)
 {
 #if defined (HSI_LL_ENABLE_TIMERS)
 	spin_lock_bh(&hsi_ll_if.stop_tx_timer_lock);
-
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].timer_cmd = HIS_LL_TIMER_QUEUE_CMD_STOP;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].timer_dir = HIS_LL_TIMER_DIR_TX;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].channel   = channel;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].time_out  = 0;
-
 	hsi_ll_if.timer_queue_wr++;
-  
 	if (hsi_ll_if.timer_queue_wr >= HSI_LL_TIMER_Q_SIZE)
 		hsi_ll_if.timer_queue_wr = 0;
-  
 	hsi_ll_if.timer_queue_cnt++;
-
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 	if (hsi_ll_if.timer_queue_cnt > HSI_LL_TIMER_Q_SIZE)
 		printk("\nHSI_LL: Timer Queue Full.%s %d", __func__, __LINE__);
 #endif
-
 	tasklet_schedule(&hsi_ll_if.timer_tasklet);
-
 	spin_unlock_bh(&hsi_ll_if.stop_tx_timer_lock);
 #endif
 }
@@ -1309,31 +1611,25 @@ static void hsi_ll_stop_rx_timer(unsigned int channel)
 {
 #if defined (HSI_LL_ENABLE_TIMERS)
 	spin_lock_bh(&hsi_ll_if.stop_rx_timer_lock);
-
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].timer_cmd = HIS_LL_TIMER_QUEUE_CMD_STOP;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].timer_dir = HIS_LL_TIMER_DIR_RX;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].channel   = channel;
 	hsi_ll_time_queue[hsi_ll_if.timer_queue_wr].time_out  = 0;
-
 	hsi_ll_if.timer_queue_wr++;
-
 	if (hsi_ll_if.timer_queue_wr >= HSI_LL_TIMER_Q_SIZE)
 		hsi_ll_if.timer_queue_wr = 0;
-
 	hsi_ll_if.timer_queue_cnt++;
-
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 	if (hsi_ll_if.timer_queue_cnt > HSI_LL_TIMER_Q_SIZE)
 		printk("\nHSI_LL: Timer Queue Full.%s %d", __func__, __LINE__);
 #endif
 	tasklet_schedule(&hsi_ll_if.timer_tasklet);
-
 	spin_unlock_bh(&hsi_ll_if.stop_rx_timer_lock);
 #endif
 }
 
 /*
- * Invoked, when TX timer expires. Processes TX state machine 
+ * Invoked, when TX timer expires. Processes TX state machine
  */
 #if defined (HSI_LL_ENABLE_TIMERS)
 static void hsi_ll_tx_timer_cb(unsigned long channel)
@@ -1360,7 +1656,7 @@ static void hsi_ll_tx_timer_cb(unsigned long channel)
 		hsi_ll_start_tx_timer(channel, HSI_LL_TX_T_BREAK_MAX_MS);
 		hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_TO_ACK;
 		break;
-    case HSI_LL_TX_STATE_WAIT_FOR_CONN_READY:
+	case HSI_LL_TX_STATE_WAIT_FOR_CONN_READY:
 		hsi_ll_send_command(HSI_LL_MSG_BREAK, channel, NULL, HSI_LL_PHY_ID_TX);
 		hsi_ll_start_tx_timer(channel, HSI_LL_TX_T_BREAK_MAX_MS);
 		hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_TO_READY;
@@ -1392,7 +1688,7 @@ static void hsi_ll_tx_timer_cb(unsigned long channel)
 			hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_SEND_BREAK;
 		} else {
 			hsi_ll_data.ch[channel].tx.retry++;
-			hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET, channel, 
+			hsi_ll_send_command(HSI_LL_MSG_OPEN_CONN_OCTET, channel,
 								&hsi_ll_data.ch[channel].tx.size, HSI_LL_PHY_ID_TX);
 			hsi_ll_start_tx_timer(channel, HSI_LL_TX_T_OPEN_CONN_MAX_MS);
 			hsi_ll_data.ch[channel].tx.state = HSI_LL_TX_STATE_OPEN_CONN;
@@ -1420,16 +1716,14 @@ static void hsi_ll_tx_timer_cb(unsigned long channel)
 	/* hsi_ll_set_if_state(IF_STATE_ERROR_RECOVERY); */
 	/* Also for other channels */
 	for(ch_i = 0; ch_i < HSI_LL_MAX_CHANNELS; ch_i++) {
-		if (hsi_ll_data.ch[ch_i].tx.state != HSI_LL_TX_STATE_CLOSED) { 
+		if (hsi_ll_data.ch[ch_i].tx.state != HSI_LL_TX_STATE_CLOSED) {
 			hsi_ll_stop_channel(ch_i);
 		}
-
 		if (ch_i != channel) {
 			if (hsi_ll_data.ch[ch_i].tx.state != HSI_LL_TX_STATE_CLOSED) {
 				hsi_ll_stop_tx_timer(ch_i);
 				hsi_ll_data.ch[ch_i].tx.state = HSI_LL_TX_STATE_ERROR;
 			}
-
 			if (hsi_ll_data.ch[ch_i].rx.state != HSI_LL_RX_STATE_CLOSED) {
 				hsi_ll_stop_rx_timer(ch_i);
 				hsi_ll_data.ch[ch_i].rx.state = HSI_LL_RX_STATE_ERROR;
@@ -1443,7 +1737,7 @@ quit_tx_timer_cb:
 #endif
 
 /*
- * Invoked, when RX timer expires. Processes RX state machine 
+ * Invoked, when RX timer expires. Processes RX state machine
  */
 #if defined (HSI_LL_ENABLE_TIMERS)
 static void hsi_ll_rx_timer_cb(unsigned long channel)
@@ -1452,7 +1746,8 @@ static void hsi_ll_rx_timer_cb(unsigned long channel)
 
 	if (channel >= HSI_LL_MAX_CHANNELS) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:Timer: Invalid channel id.%s %d\n", __func__, __LINE__);
+		printk("\nHSI_LL:Timer: Invalid channel id.%s %d\n",
+				__func__, __LINE__);
 #endif
 		return;
 	}
@@ -1527,13 +1822,11 @@ static void hsi_ll_rx_timer_cb(unsigned long channel)
 		if (hsi_ll_data.ch[ch_i].rx.state != HSI_LL_RX_STATE_CLOSED) {
 			hsi_ll_stop_channel(ch_i);
 		}
-
-		if (ch_i != channel) { 
+		if (ch_i != channel) {
 			if (hsi_ll_data.ch[ch_i].rx.state != HSI_LL_RX_STATE_CLOSED) {
 				hsi_ll_stop_rx_timer(ch_i);
 				hsi_ll_data.ch[ch_i].rx.state = HSI_LL_RX_STATE_ERROR;
 			}
-
 			if (hsi_ll_data.ch[ch_i].tx.state != HSI_LL_TX_STATE_CLOSED) {
 				hsi_ll_stop_tx_timer(ch_i);
 				hsi_ll_data.ch[ch_i].tx.state = HSI_LL_TX_STATE_ERROR;
@@ -1554,9 +1847,7 @@ static int hsi_ll_timer_init(void)
 		init_timer(&hsi_ll_data.ch[ch_i].tx.timer_id);
 		init_timer(&hsi_ll_data.ch[ch_i].rx.timer_id);
 	}
-
 	tasklet_init(&hsi_ll_if.timer_tasklet, hsi_ll_timer_bh, ch_i);
-
 	return HSI_LL_RESULT_SUCCESS;
 }
 #endif
@@ -1570,6 +1861,25 @@ static int hsi_ll_events_init(void)
 #if defined (HSI_LL_ENABLE_PM)
 	init_waitqueue_head(&hsi_ll_if.psv_event);
 #endif
+
+	/* Initialize spin_lock */
+	spin_lock_init(&hsi_ll_if.phy_cb_lock);
+
+#if defined (HSI_LL_ENABLE_TIMERS)
+	spin_lock_init(&hsi_ll_if.start_tx_timer_lock);
+	spin_lock_init(&hsi_ll_if.start_rx_timer_lock);
+	spin_lock_init(&hsi_ll_if.stop_tx_timer_lock);
+	spin_lock_init(&hsi_ll_if.stop_rx_timer_lock);
+	spin_lock_init(&hsi_ll_if.tx_timer_cb_lock);
+	spin_lock_init(&hsi_ll_if.rx_timer_cb_lock);
+	spin_lock_init(&hsi_ll_if.timer_bh_lock);
+#endif
+	spin_lock_init(&hsi_ll_if.wr_cmd_cb_lock);
+	spin_lock_init(&hsi_ll_if.rd_cmd_cb_lock);
+	spin_lock_init(&hsi_ll_if.wr_cb_lock);
+	spin_lock_init(&hsi_ll_if.rd_cb_lock);
+	spin_lock_init(&hsi_ll_if.wr_cmd_lock);
+
 	return HSI_LL_RESULT_SUCCESS;
 }
 
@@ -1587,15 +1897,15 @@ static int hsi_ll_probe_cb(struct hsi_device *dev)
 
 	if (dev->n_ch >= HSI_LL_MAX_CHANNELS) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-		printk("\nHSI_LL:Invalid channel %d. %s %d.\n", 
-                  dev->n_ch, __func__, __LINE__);
-#endif 
+		printk("\nHSI_LL:Invalid channel %d. %s %d.\n",
+					dev->n_ch, __func__, __LINE__);
+#endif
 		return -ENXIO;
 	}
 
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
-	printk("\nHSI_LL: probe Channel ID = %d , Dev[%d] = 0x%x . %s %d.\n", 
-              dev->n_ch, dev->n_ch, (int)dev, __func__, __LINE__);
+	printk("\nHSI_LL: probe Channel ID = %d , Dev[%d] = 0x%x . %s %d.\n",
+				dev->n_ch, dev->n_ch, (int)dev, __func__, __LINE__);
 #endif
 
 	spin_lock_bh(&hsi_ll_if.phy_cb_lock);
@@ -1649,15 +1959,26 @@ static int hsi_ll_remove_cb(struct hsi_device *dev)
 }
 
 static void hsi_ll_port_event_cb(
-	struct hsi_device *dev, 
-	unsigned int event, 
+	struct hsi_device *dev,
+	unsigned int event,
 	void *arg)
 {
 	switch(event) {
 	case HSI_EVENT_BREAK_DETECTED:
-#if defined (HSI_LL_ENABLE_DEBUG_LOG)
-		printk("\nHSI_LL:Break Event detected.%s %d\n",
+#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
+		if((dev->n_ch == 0)&&(hsi_ll_data.state == HSI_LL_IF_STATE_READY)) {
+			ifx_schedule_cp_dump_or_reset();
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+			printk("\nHSI_LL:Break Event detected. start ifx_schedule_cp_dump_or_reset %s %d\n",
 				  __func__, __LINE__);
+#endif
+		}
+		else {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+			printk("\nHSI_LL:Break Event detected. Nothing done %s %d\n",
+					  __func__, __LINE__);
+#endif
+		}
 #endif
 		break;
 	case HSI_EVENT_ERROR:
@@ -1717,30 +2038,39 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 	int ret = HSI_LL_RESULT_SUCCESS;
 
 	if (!hsi_ll_data.initialized) {
-		if ((port <= 0)            ||
-		   (port > HSI_MAX_PORTS) ||
-		   (cb == NULL)) {
+		if ((port <= 0)			   ||
+			(port > HSI_MAX_PORTS) ||
+			(cb == NULL)) {
 			ret = HSI_LL_RESULT_INVALID_PARAM;
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 			printk("\nHSI_LL:Invalid port or callback pointer. %s %d\n",
-					  __func__, __LINE__);
+					__func__, __LINE__);
 #endif
 			goto quit_init;
 		}
 
+#if 1
+		for (i = 0; i < HSI_MAX_PORTS; i++)
+			hsi_ll_iface.ch_mask[i] = 0;
+		
+		for (i = 0; i < port; i++) {
+			hsi_ll_iface.ch_mask[i] = (0xFFFFFFFF ^ (0xFFFFFFFF << HSI_LL_MAX_CHANNELS));
+		}
+#else
 		port-=1;
 
 		for (i = port; i < HSI_MAX_PORTS; i++) {
 			hsi_ll_iface.ch_mask[i] = (0xFFFFFFFF ^ (0xFFFFFFFF << HSI_LL_MAX_CHANNELS));
 		}
+#endif
 
 		if (HSI_LL_RESULT_SUCCESS != hsi_ll_events_init()) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Cannot create Events. %s %d\n",__func__, __LINE__);
+			printk("\nHSI_LL:Cannot create Events. %s %d\n",
+					__func__, __LINE__);
 #endif
 			ret = HSI_LL_RESULT_ERROR;
 			hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
-
 			goto quit_init;
 		}
 
@@ -1752,7 +2082,7 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 		if (ret) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
 			printk("\nHSI_LL:Error while registering with HSI PHY driver err=%d. %s %d\n",
-					  ret, __func__, __LINE__);
+					ret, __func__, __LINE__);
 #endif
 			ret = HSI_LL_RESULT_INIT_ERROR;
 			goto quit_init;
@@ -1763,7 +2093,8 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 #if defined (HSI_LL_ENABLE_TIMERS)
 		if (HSI_LL_RESULT_SUCCESS != hsi_ll_timer_init()) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Cannot create Timers. %s %d\n", __func__, __LINE__);
+			printk("\nHSI_LL:Cannot create Timers. %s %d\n",
+					__func__, __LINE__);
 #endif
 			ret = HSI_LL_RESULT_ERROR;
 			hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
@@ -1774,13 +2105,13 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
 		printk("\nHSI_LL:creating threads. %s %d.\n", __func__, __LINE__);
 #endif
-		hsi_ll_if.wr_th = kthread_run(hsi_ll_wr_ctrl_ch_th, 
+		hsi_ll_if.wr_th = kthread_run(hsi_ll_wr_ctrl_ch_th,
 									  NULL,
 									 "hsi_ll_wr_ctrlch");
 
 		if (IS_ERR(hsi_ll_if.wr_th)) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Cannot create write ctrl Thread. %s %d\n", 
+			printk("\nHSI_LL:Cannot create write ctrl Thread. %s %d\n",
 					  __func__, __LINE__);
 #endif
 			ret = HSI_LL_RESULT_ERROR;
@@ -1789,19 +2120,22 @@ int hsi_ll_init(int port, const hsi_ll_notify cb)
 		}
 
 #if defined (HSI_LL_ENABLE_PM)
-		hsi_ll_if.psv_th = kthread_run(hsi_ll_psv_th, 
+		hsi_ll_if.psv_th = kthread_run(hsi_ll_psv_th,
 									   NULL,
 									  "hsi_ll_psv_thread");
 
 		if (IS_ERR(hsi_ll_if.psv_th)) {
 #if defined (HSI_LL_ENABLE_ERROR_LOG)
-			printk("\nHSI_LL:Cannot create PSV Thread. %s %d\n", 
+			printk("\nHSI_LL:Cannot create PSV Thread. %s %d\n",
 					  __func__, __LINE__);
 #endif
 			ret = HSI_LL_RESULT_ERROR;
 			hsi_ll_data.state = HSI_LL_IF_STATE_UN_INIT;
 			goto quit_init;
 		}
+#endif
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+		hsi_ll_if.hsi_tx_retry_wq = create_workqueue("hsi_tx_retry_wq");
 #endif
 		hsi_ll_data.state = HSI_LL_IF_STATE_READY;
 	}
@@ -1820,13 +2154,12 @@ int hsi_ll_shutdown(void)
 #endif
 	if (hsi_ll_data.initialized) {
 #if defined (HSI_LL_ENABLE_DEBUG_LOG)
-		printk("\nHSI_LL:HSI Link Layer Shutdown initiated. %s %d\n", 
+		printk("\nHSI_LL:HSI Link Layer Shutdown initiated. %s %d\n",
 				  __func__, __LINE__);
 #endif
-		/* TODO: Add Power management here*/
 		hsi_ll_close(HSI_LL_CTRL_CHANNEL);
 		hsi_ioctl(hsi_ll_data.dev[HSI_LL_CTRL_CHANNEL],
-				  HSI_IOCTL_ACWAKE_DOWN, 
+				  HSI_IOCTL_ACWAKE_DOWN,
 				  NULL);
 		kthread_stop(hsi_ll_if.rd_th);
 		kthread_stop(hsi_ll_if.wr_th);
@@ -1840,10 +2173,244 @@ int hsi_ll_shutdown(void)
 		}
 		tasklet_kill(&hsi_ll_if.timer_tasklet);
 #endif
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+		destroy_workqueue(hsi_ll_if.hsi_tx_retry_wq);
+#endif
 		hsi_unregister_driver(&hsi_ll_iface);
 		hsi_ll_data.initialized = FALSE;
 	}
 	return HSI_LL_RESULT_SUCCESS;
 }
 
+/* Resets DLP */
+int hsi_ll_reset(int type)
+{
+	int ch_i = 0;
+	struct hsi_ll_rx_tx_data temp;
+
+	hsi_ll_data.state = HSI_LL_IF_STATE_ERR_RECOVERY;
+
+	hsi_ll_data.initialized = FALSE;
+
+	if(type != HSI_LL_RESET_IFX_COREDUMP) {		
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+		printk("\nHSI_LL: DLP recovery hsi_ll_reset started.\n");
+#endif
+	}
+	else {
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+	printk("\nHSI_LL: ifx cordump hsi_ll_reset started.\n");
+#endif
+
+#if defined(CONFIG_MACH_LGE_COSMOPOLITAN)
+		xmd_set_ifx_cp_dump();
+#endif
+	}
+
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+	flush_workqueue(hsi_ll_if.hsi_tx_retry_wq);
+#endif
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: Requesting read/write cancel.\n");
+#endif
+	for(ch_i = 0; ch_i < HSI_LL_MAX_CHANNELS; ch_i++) {
+		hsi_ll_data.ch[ch_i].open = FALSE;
+		hsi_write_cancel(hsi_ll_data.dev[ch_i]);
+		hsi_read_cancel(hsi_ll_data.dev[ch_i]);
+	}
+
+	hsi_ll_if.wr_complete_flag = 1;
+	wake_up_interruptible(&hsi_ll_if.wr_complete);
+	hsi_ll_if.rd_complete_flag = 1;
+	wake_up_interruptible(&hsi_ll_if.rd_complete);
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: Unblocking all read/write callbacks.\n");
+#endif
+
+/* RIL recovery initialization	*/
+#if 1	
+	hsi_ll_data.ch[HSI_LL_CTRL_CHANNEL].tx.state = HSI_LL_RX_STATE_IDLE;
+
+	for(ch_i = 1; ch_i < HSI_LL_MAX_CHANNELS; ch_i++) {
+		if (hsi_ll_data.ch[ch_i].tx.buffer != NULL) {
+			temp.buffer = hsi_ll_data.ch[ch_i].tx.buffer;
+			temp.size   = hsi_ll_data.ch[ch_i].tx.size;
+
+			hsi_ll_cb(ch_i,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_WRITE_COMPLETE,
+					  &temp);
+		}
+
+		hsi_ll_data.ch[ch_i].tx.buffer = NULL;
+		hsi_ll_data.ch[ch_i].tx.size = 0;
+		hsi_ll_data.ch[ch_i].tx.state = HSI_LL_TX_STATE_IDLE;
+
+		if (hsi_ll_data.ch[ch_i].rx.buffer != NULL) {
+			temp.buffer = hsi_ll_data.ch[ch_i].rx.buffer;
+			temp.size   = hsi_ll_data.ch[ch_i].rx.size;
+			hsi_ll_cb(ch_i,
+					  HSI_LL_RESULT_SUCCESS,
+					  HSI_LL_EV_READ_COMPLETE,
+					  &temp);
+
+		}
+		
+		hsi_ll_data.ch[ch_i].rx.buffer = NULL;
+		hsi_ll_data.ch[ch_i].rx.size = 0;			
+		hsi_ll_data.ch[ch_i].rx.state = HSI_LL_RX_STATE_IDLE;
+		
+		hsi_ll_data.ch[ch_i].rx.nak_sent = 0;
+		
+	}
+#endif
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: Revoking PSV enable.\n");
+#endif
+
+#if defined (HSI_LL_ENABLE_PM)
+	hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_DISABLE;
+
+	hsi_ll_data.tx_cfg.ac_wake = HSI_LL_WAKE_LINE_LOW;
+#endif
+
+	if(type != HSI_LL_RESET_IFX_COREDUMP)
+	{
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+		printk("\nHSI_LL: Resetting HSI PHY Driver.\n");
+#endif
+		if(0 > hsi_ioctl(hsi_ll_data.dev[0], HSI_IOCTL_SW_RESET, NULL)) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("HSI_LL: HSI PHY rest returned error.\n");
+#endif
+		}
+
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+	printk("\nHSI_LL: DLP recovery hsi_ll_reset completed.\n");
+#endif
+	}
+	else {
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+	printk("\nHSI_LL: ifx cordump hsi_ll_reset completed.\n");
+#endif
+	}
+
+	return 0;
+}
+
+/* Restarts DLP */
+int hsi_ll_restart(void)
+{
+	int ch_i = 0;
+
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+	printk("\nHSI_LL: DLP recovery hsi_ll_restart started.\n");
+#endif
+
+	hsi_ll_data.tx_cmd.count	   = 0;
+	hsi_ll_data.tx_cmd.write_index = 0;
+	hsi_ll_data.tx_cmd.read_index  = 0;
+	hsi_ll_if.msg_avaliable_flag   = 0;
+
+	for(ch_i=0; ch_i < HSI_LL_MAX_CHANNELS; ch_i++) {
+#if 1
+		if (0 > hsi_open(hsi_ll_data.dev[ch_i])) {
+#if defined (HSI_LL_ENABLE_ERROR_LOG)
+		printk("\nHSI_LL:Could not open channel %d.%s %d\n",
+				  ch_i, __func__, __LINE__);
+#endif
+		}
+		else {
+			hsi_ll_data.ch[ch_i].open = TRUE;
+		}
+#endif
+	}
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: Reconfiguring HSI Buses.\n");
+#endif
+	if(0 > hsi_ll_config_bus()) {
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+		printk("HSI_LL: HSI bus reconfiguration failed. Recovery failed.\n");
+#endif
+		return -1;
+	}
+
+#if defined (HSI_LL_ENABLE_PM)
+	hsi_ll_if.psv_event_flag = HSI_LL_PSV_EVENT_PSV_RESTART;
+	wake_up_interruptible(&hsi_ll_if.psv_event);
+
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: PSV enable requested.\n");
+#endif
+#endif
+
+	hsi_ll_data.state = HSI_LL_IF_STATE_READY;
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+	printk("\nHSI_LL: Resuming read/write threads.\n");
+#endif
+	hsi_ll_if.wr_complete_flag = 2;
+	hsi_ll_if.rd_complete_flag = 2;
+	wake_up_interruptible(&hsi_ll_if.wr_complete);
+	wake_up_interruptible(&hsi_ll_if.rd_complete);
+	hsi_ll_data.initialized = TRUE;
+	
+#if 1 //defined (HSI_LL_ENABLE_CRITICAL_LOG)
+	printk("\nHSI_LL: DLP recovery hsi_ll_restart completed.\n");
+#endif
+
+	return 0;
+}
+
+/**
+ * hsi_ll_ioctl - HSI LL IOCTL
+ * @channel: Channel Number.
+ * @command: command to execute
+ * @arg: pointer to a variable specific to command.
+ */
+int hsi_ll_ioctl(int channel, int command, void *arg)
+{
+	int ret;
+
+	if(hsi_ll_data.state == HSI_LL_IF_STATE_ERR_RECOVERY)
+		return HSI_LL_RESULT_ERROR;
+
+	switch(command) {
+#if defined (HSI_LL_ENABLE_RX_BUF_RETRY_WQ)
+	case HSI_LL_IOCTL_RX_RESUME: {
+		if(hsi_ll_data.ch[channel].rx.state == HSI_LL_RX_STATE_BLOCKED) {
+			struct hsi_ll_rx_tx_data *tmp = (struct hsi_ll_rx_tx_data*)arg;
+			if(arg == NULL) {
+				return HSI_LL_RESULT_ERROR;
+			}
+#if defined (HSI_LL_ENABLE_DEBUG_LOG)
+			printk("\nHSI_LL: Got mem(size=%d), so unblocking ch %d.\n",
+						tmp->size,channel);
+#endif
+			hsi_ll_data.ch[channel].rx.buffer = tmp->buffer;
+			hsi_ll_data.ch[channel].rx.size   = tmp->size;
+			hsi_ll_send_command(HSI_LL_MSG_ACK, channel,
+								&tmp->size,
+								HSI_LL_PHY_ID_RX);
+			HSI_LL_GET_SIZE_IN_WORDS(tmp->size);
+			hsi_ll_data.ch[channel].rx.state = HSI_LL_RX_STATE_RX;
+			hsi_read(hsi_ll_data.dev[channel],
+				tmp->buffer,
+				tmp->size);
+			ret = HSI_LL_RESULT_SUCCESS;
+		} else {
+			ret = HSI_LL_RESULT_ERROR;
+		}
+		}
+		break;
+#endif
+	default:
+		ret = HSI_LL_RESULT_ERROR;
+		break;
+	}
+
+	return ret;
+}
 

@@ -23,6 +23,9 @@
 #include <linux/module.h>
 #include <linux/err.h>
 #include <linux/delay.h>
+#if defined (CONFIG_MACH_LGE_CX2)
+#include <linux/io.h>
+#endif
 
 #include <plat/opp.h>
 #include <plat/clock.h>
@@ -35,14 +38,24 @@
 #include "cm-regbits-44xx.h"
 extern bool dss_get_mainclk_state(void);
 
+#if defined (CONFIG_MACH_LGE_CX2)
+#define TNT_FREQ 1200000000
+#define OMAP44XX_CONTROL_FUSE_MPU_OPPTNT		0x24C
+#define CTRL_FUSE_OPP_VDD_MPU_3 (OMAP443X_SCM_BASE + OMAP44XX_CONTROL_FUSE_MPU_OPPTNT)
+#endif
+
+
 static struct clk *dpll_mpu_clk, *iva_clk, *dsp_clk, *l3_clk, *core_m2_clk;
 static struct clk *core_m3_clk, *core_m6_clk, *core_m7_clk;
 static struct clk *per_m3_clk, *per_m6_clk;
 static struct clk *abe_clk, *sgx_clk, *fdif_clk, *hsi_clk;
 
-
 static bool bootup_m3_with_maxclcok =1;
-
+/*
+ * Separate OPP table is needed for pre ES2.1 chips as emif cannot be scaled.
+ * This table needs to be maintained only temporarily till everybody
+ * migrates to ES2.1
+ */
 static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
 	/* MPU OPP1 - OPP50 */
 	OMAP_OPP_DEF("mpu", true, 300000000, 930000),
@@ -69,13 +82,13 @@ static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
 	/* DSP OPP3 - OPPTB */
 	OMAP_OPP_DEF("dsp", false, 498000000, 1260000),
 	/* ABE OPP - OPP50_98 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 49000000, 928000),
+	OMAP_OPP_DEF("omap-aess-audio", true, 49152000, 928000),
 	/* ABE OPP1 - OPP50 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 98300000, 930000),
+	OMAP_OPP_DEF("omap-aess-audio", true, 98304000, 930000),
 	/* ABE OPP2 - OPP100 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 196600000, 1100000),
+	OMAP_OPP_DEF("omap-aess-audio", true, 196608000, 1100000),
 	/* ABE OPP3 - OPPTB */
-	OMAP_OPP_DEF("omap-aess-audio", false, 196600000, 1260000),
+	OMAP_OPP_DEF("omap-aess-audio", false, 196608000, 1260000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 930000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
@@ -91,70 +104,96 @@ static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
 	/* HSI OPP1 - OPP50 */
 	OMAP_OPP_DEF("hsi", true, 96000000, 930000),
 	/* HSI OPP2 - OPP100 */
-	
 	OMAP_OPP_DEF("hsi", true, 96000000, 1100000),
-	
 };
 
 static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
+	/* MPU OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("mpu", false, 196608000, 1005000),
 	/* MPU OPP1 - OPP50 */
-	OMAP_OPP_DEF("mpu", true, 300000000, 930000),
+	OMAP_OPP_DEF("mpu", true, 300000000, 1025000),
 	/* MPU OPP2 - OPP100 */
-	OMAP_OPP_DEF("mpu", true, 600000000, 1100000),
+	OMAP_OPP_DEF("mpu", true, 600000000, 1200000),
 	/* MPU OPP3 - OPP-Turbo */
-	OMAP_OPP_DEF("mpu", true, 800000000, 1260000),
+	OMAP_OPP_DEF("mpu", true, 800000000, 1313000),
+    #if defined (CONFIG_MACH_LGE_CX2)
 	/* MPU OPP4 - OPP-SB */
-	OMAP_OPP_DEF("mpu", true, 1008000000, 1350000),
-	/* IVA OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("iva", true,  133000000, 928000),
+	OMAP_OPP_DEF("mpu", true, 1008000000, 1374000),
+	/* MPU OPP4 - OPP-TNT */
+	OMAP_OPP_DEF("mpu", false, TNT_FREQ, 1375000),
+    #else
+	/* MPU OPP4 - OPP-SB */
+	OMAP_OPP_DEF("mpu", true, 1008000000, 1375000),
+    #endif
+
+	/* IVA OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("iva", false,  98304000, 1011000),
 	/* IVA OPP1 - OPP50 */
-	OMAP_OPP_DEF("iva", true,  133000000, 930000),
+	OMAP_OPP_DEF("iva", true,  133000000, 1013000),
 	/* IVA OPP2 - OPP100 */
-	OMAP_OPP_DEF("iva", true,  266000000, 1100000),
+	OMAP_OPP_DEF("iva", true,  266000000, 1188000),
 	/* IVA OPP3 - OPP-Turbo */
-	OMAP_OPP_DEF("iva", false, 332000000, 1260000),
-	/* DSP OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("dsp", true, 232800000, 928000),
+	OMAP_OPP_DEF("iva", false, 332000000, 1300000),
+
+	/* DSP OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("dsp", false, 98304000, 1011000),
 	/* DSP OPP1 - OPP50 */
-	OMAP_OPP_DEF("dsp", true, 232800000, 930000),
+	OMAP_OPP_DEF("dsp", true, 232800000, 1013000),
 	/* DSP OPP2 - OPP100 */
-	OMAP_OPP_DEF("dsp", true, 465600000, 1100000),
+	OMAP_OPP_DEF("dsp", true, 465600000, 1188000),
 	/* DSP OPP3 - OPPTB */
-	OMAP_OPP_DEF("dsp", false, 498000000, 1260000),
+	OMAP_OPP_DEF("dsp", false, 498000000, 1300000),
+
 	/* ABE OPP - OPP50_98 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 49000000, 928000),
+	OMAP_OPP_DEF("omap-aess-audio", false, 98304000, 1011000),
 	/* ABE OPP1 - OPP50 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 98300000, 930000),
+	OMAP_OPP_DEF("omap-aess-audio", true, 98304000, 1013000),
 	/* ABE OPP2 - OPP100 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 196600000, 1100000),
+	OMAP_OPP_DEF("omap-aess-audio", true, 196608000, 1188000),
 	/* ABE OPP3 - OPPTB */
-	OMAP_OPP_DEF("omap-aess-audio", false, 196600000, 1260000),
+	OMAP_OPP_DEF("omap-aess-audio", false, 196608000, 1300000),
+
+	/* L3 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("l3_main_1", false, 98304000, 1005000),
 	/* L3 OPP1 - OPP50 */
-	OMAP_OPP_DEF("l3_main_1", true, 100000000, 950000),
+	OMAP_OPP_DEF("l3_main_1", true, 100000000, 1025000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
-	OMAP_OPP_DEF("l3_main_1", true, 200000000, 1100000),
+	OMAP_OPP_DEF("l3_main_1", true, 200000000, 1200000),
+
+	/* EMIF1 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("emif1", false, 196608000, 1005000),
 	/*EMIF1 OPP1 - OPP50 */
-	OMAP_OPP_DEF("emif1", true, 400000000, 950000),
+	OMAP_OPP_DEF("emif1", true, 400000000, 1025000),
 	/*EMIF1 OPP2 - OPP100 */
-	OMAP_OPP_DEF("emif1", true, 800000000, 1100000),
+	OMAP_OPP_DEF("emif1", true, 800000000, 1200000),
+
+	/* EMIF2 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("emif2", false, 196608000, 1005000),
 	/*EMIF2 OPP1 - OPP50 */
-	OMAP_OPP_DEF("emif2", true, 400000000, 950000),
+	OMAP_OPP_DEF("emif2", true, 400000000, 1025000),
 	/*EMIF2 OPP2 - OPP100 */
-	OMAP_OPP_DEF("emif2", true, 800000000, 1100000),
+	OMAP_OPP_DEF("emif2", true, 800000000, 1200000),
+
+	/* CAM FDIF OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("fdif", false, 49152000, 1005000),
 	/* CAM FDIF OPP1 - OPP50 */
-	OMAP_OPP_DEF("fdif", true, 64000000, 950000),
+	OMAP_OPP_DEF("fdif", true, 64000000, 1025000),
 	/* CAM FDIF OPP2 - OPP100 */
-	OMAP_OPP_DEF("fdif", true, 128000000, 1100000),
+	OMAP_OPP_DEF("fdif", true, 128000000, 1200000),
+
+	/* SGX OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("gpu", false, 196608000, 1005000),
 	/* SGX OPP1 - OPP50 */
-	OMAP_OPP_DEF("gpu", true, 153600000, 950000),
+	OMAP_OPP_DEF("gpu", true, 153600000, 1025000),
 	/* SGX OPP2 - OPP100 */
-	OMAP_OPP_DEF("gpu", true, 307200000, 1100000),
+	OMAP_OPP_DEF("gpu", true, 307200000, 1200000),
+
+	/* HSI OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("hsi", false, 98304000, 1005000),
 	/* HSI OPP1 - OPP50 */
-	OMAP_OPP_DEF("hsi", true, 96000000, 950000),
+	OMAP_OPP_DEF("hsi", true, 96000000, 1025000),
 	/* HSI OPP2 - OPP100 */
-	
-	OMAP_OPP_DEF("hsi", true, 96000000, 1100000),
-	
+	OMAP_OPP_DEF("hsi", true, 96000000, 1200000),
 };
 
 #define	L3_OPP50_RATE			100000000
@@ -195,9 +234,11 @@ static unsigned long compute_lpj(unsigned long ref, u_int div, u_int mult)
 }
 #endif
 
+//static int old_rate=0;
+//static DEFINE_SPINLOCK(emif_lock);
+
 static int old_mpu_rate=0;
 static DEFINE_SPINLOCK(mpu_lock);
-
 extern int cosmo_panel_suspend_flag;
 extern u32 cm_rmw_mod_reg_bitsEx(u32 mask, u32 bits, s16 module, s16 idx);
 
@@ -216,6 +257,51 @@ static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 
 	return 0;
 #else
+#if 0
+	int 	ret = 0;
+	unsigned long irqflags = 0;
+	u32 reg =OMAP4430_MEMIF_STATDEP_MASK;	
+	
+	//printk("func=%s, rate =%ld, name=%s\n", __func__, rate, dev->driver->name);
+
+	// rate 300M , LCD off
+	//if (rate == 300000000 && cosmo_panel_suspend_flag ==1)
+	if (dss_get_mainclk_state() == 0)
+	{
+		ret = clk_set_rate(dpll_mpu_clk, rate);
+		if (ret) {
+			dev_warn(dev, "%s: Unable to set rate to %ld\n",
+				__func__, rate);
+			return ret;
+		}
+
+		if(old_mpu_rate != rate)
+		{
+			spin_lock_irqsave(&mpu_lock, irqflags);
+			cm_rmw_mod_reg_bitsEx(reg, 0, OMAP4430_PRM_MPU_MOD, OMAP4_CM_MPU_STATICDEP_OFFSET);
+			spin_unlock_irqrestore(&mpu_lock, irqflags);
+		}
+		old_mpu_rate= rate;
+	}
+	else
+	{
+		if(old_mpu_rate != rate)
+		{
+			spin_lock_irqsave(&mpu_lock, irqflags);	
+			cm_rmw_mod_reg_bitsEx(reg, 1, OMAP4430_PRM_MPU_MOD, OMAP4_CM_MPU_STATICDEP_OFFSET);
+			spin_unlock_irqrestore(&mpu_lock, irqflags);				
+		}
+
+		ret = clk_set_rate(dpll_mpu_clk, rate);
+		if (ret) {
+			dev_warn(dev, "%s: Unable to set rate to %ld\n",
+				__func__, rate);
+			return ret;
+		}
+
+		old_mpu_rate= rate;
+	}
+#else
 	int ret;
 
 	ret = clk_set_rate(dpll_mpu_clk, rate);
@@ -224,6 +310,8 @@ static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 			__func__, rate);
 		return ret;
 	}
+
+#endif
 
 	return 0;
 #endif	
@@ -270,7 +358,6 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
 	u32 d_per_m3_rate, d_per_m6_rate;
 	
-
 	if(bootup_m3_with_maxclcok ==1){
 		d_core_m3_rate = DPLL_CORE_M3_OPP100_RATE;
 		d_core_m6_rate = DPLL_CORE_M6_OPP100_RATE;
@@ -281,7 +368,6 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 		bootup_m3_with_maxclcok=0;
 	}
 	else{
-
 		if (rate <= L3_OPP50_RATE) {
 			d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
 			d_core_m6_rate = DPLL_CORE_M6_OPP50_RATE;
@@ -313,12 +399,50 @@ static unsigned long omap4_l3_get_rate(struct device *dev)
 
 static int omap4_emif_set_rate(struct device *dev, unsigned long rate)
 {
+//	return clk_set_rate(core_m2_clk, rate);	//TI original code
+
 #ifdef CONFIG_OMAP4_KEEP_STATIC_DEPENDENCIES
 	pr_info("%s: Keep static depndencies\n", __func__);
-	return clk_set_rate(core_m2_clk, rate);
+	return clk_set_rate(core_m2_clk, rate);	//TI original code
 #else
 
-	return clk_set_rate(core_m2_clk, rate);
+#if 0
+	int 	ret_clk = 0;
+	unsigned long irqflags = 0;
+	u32 reg =OMAP4430_MEMIF_STATDEP_MASK;	
+	
+	//printk("func=%s, rate =%ld, name=%s\n", __func__, rate, dev->driver->name);
+	if (rate == 400000000)
+	{
+		ret_clk = clk_set_rate(core_m2_clk, rate);		
+		if(old_rate != rate)
+		{
+			spin_lock_irqsave(&emif_lock, irqflags);
+			cm_rmw_mod_reg_bitsEx(reg, 0, OMAP4430_PRM_MPU_MOD, OMAP4_CM_MPU_STATICDEP_OFFSET);
+			spin_unlock_irqrestore(&emif_lock, irqflags);
+		}
+		old_rate = rate;		
+	}
+	else if ( rate == 800000000)
+	{
+		if(old_rate != rate)
+		{
+			spin_lock_irqsave(&emif_lock, irqflags);	
+			cm_rmw_mod_reg_bitsEx(reg, 1, OMAP4430_PRM_MPU_MOD, OMAP4_CM_MPU_STATICDEP_OFFSET);
+			spin_unlock_irqrestore(&emif_lock, irqflags);				
+		}
+		ret_clk = clk_set_rate(core_m2_clk, rate);
+		old_rate = rate;
+	}
+	else
+	{
+		ret_clk = clk_set_rate(core_m2_clk, rate);
+		old_rate = rate;
+		printk("func=%s, 2army, There no have OPP table rate =%ld\n", __func__, rate);
+	}
+	return ret_clk;
+#endif
+	return clk_set_rate(core_m2_clk, rate);	//TI original code
 #endif	// CONFIG_OMAP4_KEEP_STATIC_DEPENDENCIES
 }
 
@@ -388,12 +512,39 @@ struct device *find_dev_ptr(char *name)
 static u8 __initdata omap4_table_init;
 
 
+static int __init omap4_opp_enable(unsigned long freq)
+{
+	int r = -ENODEV;
+	struct device *mpu_dev;
+	struct omap_opp *opp;
+
+	mpu_dev = omap2_get_mpuss_device();
+
+	if (mpu_dev) {
+		opp = opp_find_freq_exact(mpu_dev, freq, false);
+		if (IS_ERR(opp))
+			goto err;
+		r = opp_enable(opp);
+		if (r < 0) {
+			dev_err(mpu_dev,
+				"opp_enable() failed for mpu@%ld", freq);
+			goto err;
+		}
+	}
+err:
+	return r;
+}
+
 int __init omap4_pm_init_opp_table(void)
 {
 	struct omap_opp_def *opp_def;
 	struct device *dev;
 	struct clk *gpu_fclk;
 	int i, r;
+        #if defined (CONFIG_MACH_LGE_CX2)
+	struct omap_opp *tnt_opp;
+	int has_tnt_opp = 0;
+	#endif
 
 	/*
 	 * Allow multiple calls, but initialize only if not already initalized
@@ -441,6 +592,30 @@ int __init omap4_pm_init_opp_table(void)
 	if (dev)
 		opp_populate_rate_fns(dev, omap4_mpu_set_rate,
 				omap4_mpu_get_rate);
+
+#if defined (CONFIG_MACH_LGE_CX2)
+	/* Enable 1.2Gz OPP for silicon that supports it
+	 * TODO: determine if FUSE_OPP_VDD_MPU_3 is a reliable source to
+	 * determine 1.2Gz availability.
+	 */
+	has_tnt_opp = __raw_readl(OMAP2_L4_IO_ADDRESS(CTRL_FUSE_OPP_VDD_MPU_3));
+	has_tnt_opp &= 0xFFFFFF;
+
+	if (has_tnt_opp) {
+		tnt_opp = opp_find_freq_exact(dev, TNT_FREQ, false);
+		if (IS_ERR(tnt_opp))
+		{
+			printk(KERN_ERR"[1.2GHz support Fail] %d\n",tnt_opp);
+			pr_err("unable to find OPP for 1.2Gz\n");
+		}
+		else
+		{
+			printk(KERN_ERR"[1.2GHz support success] %d\n",tnt_opp);
+			opp_enable(tnt_opp);
+		}
+	}
+#endif
+
 
 	dev = omap2_get_iva_device();
 	if (dev)

@@ -224,10 +224,10 @@ enum hdmi_ioctl_cmds {
 	HDMI_READ_EDID,
 };
 
-
+/* LGE_CHANGE [wonki.choi@lge.com] HDMI video start change 2011-4-14 */
 int hdmi_video_prepare_change(void *id, int layer_count, bool add_or_change, char *reason);
 int hdmi_video_commit_change(void *id);
-
+/* LGE_CHANGE_E [wonki.choi@lge.com] 2011-4-14 */
 
 #ifdef __cplusplus
 };

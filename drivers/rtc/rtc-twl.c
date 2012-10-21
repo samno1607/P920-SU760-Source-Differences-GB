@@ -464,8 +464,6 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 	int irq = platform_get_irq(pdev, 0);
 	u8 rd_reg;
 	
-	
-	
 	unsigned char rtc_init_year;
 	unsigned char rtc_init_month;
 	unsigned char rtc_init_day;
@@ -500,9 +498,17 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 	ret = twl_rtc_write_u8(rd_reg, REG_RTC_STATUS_REG);
 	if (ret < 0)
 		goto out1;
+//Jags_13_04_11 RTC Randome Wakeup Fail Fix ++
 		ret = request_threaded_irq(irq, NULL,twl_rtc_interrupt,
 				IRQF_TRIGGER_RISING,
 				dev_name(&rtc->dev), rtc);
+//Jags_13_04_11 RTC Randome Wakeup Fail Fix --
+/*
+
+	ret = request_irq(irq, twl_rtc_interrupt,
+				IRQF_TRIGGER_RISING,
+				dev_name(&rtc->dev), rtc);
+	*/
 	if (ret < 0) {
 		dev_err(&pdev->dev, "IRQ is not free.\n");
 		goto out1;
@@ -528,7 +534,6 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 			goto out2;
 	}
 
-	
 	ret = twl_rtc_read_u8(&rtc_init_year, REG_YEARS_REG);
 	ret = twl_rtc_read_u8(&rtc_init_month, REG_MONTHS_REG);
 	ret = twl_rtc_read_u8(&rtc_init_day, REG_DAYS_REG);
@@ -542,6 +547,14 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 		roll_back_date=1;
 	}
 
+/* 2011-02-18 : Block for QM2 temporary, It should be considered in ATT SW
+	if(roll_back_date)
+	{
+		twl_rtc_write_u8(0x11,REG_YEARS_REG);
+		twl_rtc_write_u8(0x02,REG_MONTHS_REG);
+		twl_rtc_write_u8(0x01,REG_DAYS_REG);
+	}
+*/		
 
 	
 

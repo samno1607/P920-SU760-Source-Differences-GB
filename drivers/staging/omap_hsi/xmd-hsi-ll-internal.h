@@ -26,6 +26,12 @@
 #define HSI_LL_MAX_CMD_Q_SIZE       32
 #define HSI_LL_TIMER_Q_SIZE (3 * HSI_LL_MAX_CHANNELS)
 
+#if defined (HSI_LL_ENABLE_PM)
+#define HSI_LL_PV_READ_CMD_Q_TIMEOUT   80
+#define HSI_LL_PV_THREAD_SLEEP_TIME    20
+#define HSI_LL_PV_RESTART_CMD_Q_TIMEOUT   100 * HZ
+#endif
+
 enum{
 	FALSE,
 	TRUE,
@@ -61,6 +67,9 @@ enum {
 	HSI_LL_PSV_EVENT_INVALID,
 	HSI_LL_PSV_EVENT_PSV_DISABLE,
 	HSI_LL_PSV_EVENT_PSV_ENABLE,
+#if 1	
+	HSI_LL_PSV_EVENT_PSV_RESTART,
+#endif	
 };
 
 /* Interface state */
@@ -94,56 +103,56 @@ enum {
 
 /* Channel TX state */
 enum {
-	HSI_LL_TX_STATE_UNDEF,
-	HSI_LL_TX_STATE_CLOSED,
-	HSI_LL_TX_STATE_IDLE,
-	HSI_LL_TX_STATE_POWER_DOWN,
-	HSI_LL_TX_STATE_ERROR,
-	HSI_LL_TX_STATE_OPEN_CONN,
-	HSI_LL_TX_STATE_WAIT_FOR_ACK,
-	HSI_LL_TX_STATE_NACK,
-	HSI_LL_TX_STATE_WAIT_FOR_CONN_READY,
-	HSI_LL_TX_STATE_SEND_CONF_RATE,
-	HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK,
-	HSI_LL_TX_STATE_TX,
-	HSI_LL_TX_STATE_WAIT_FOR_CONN_CLOSED,
-	HSI_LL_TX_STATE_TO_OPEN_CONN,
-	HSI_LL_TX_STATE_TO_ACK,
-	HSI_LL_TX_STATE_TO_READY,
-	HSI_LL_TX_STATE_TO_CONF,
-	HSI_LL_TX_STATE_TO_CONF_ACK,
-	HSI_LL_TX_STATE_TO_TX,
-	HSI_LL_TX_STATE_TO_CLOSE,
-	HSI_LL_TX_STATE_SEND_BREAK,
-	HSI_LL_TX_STATE_WAIT_FOR_TX_COMPLETE,
+/* 0 */	HSI_LL_TX_STATE_UNDEF,
+/* 1 */	HSI_LL_TX_STATE_CLOSED,
+/* 2 */	HSI_LL_TX_STATE_IDLE,
+/* 3 */	HSI_LL_TX_STATE_POWER_DOWN,
+/* 4 */	HSI_LL_TX_STATE_ERROR,
+/* 5 */	HSI_LL_TX_STATE_OPEN_CONN,
+/* 6 */	HSI_LL_TX_STATE_WAIT_FOR_ACK,
+/* 7 */	HSI_LL_TX_STATE_NACK,
+/* 8 */	HSI_LL_TX_STATE_WAIT_FOR_CONN_READY,
+/* 9 */	HSI_LL_TX_STATE_SEND_CONF_RATE,
+/* 10 */	HSI_LL_TX_STATE_WAIT_FOR_CONF_ACK,
+/* 11 */	HSI_LL_TX_STATE_TX,
+/* 12 */	HSI_LL_TX_STATE_WAIT_FOR_CONN_CLOSED,
+/* 13 */	HSI_LL_TX_STATE_TO_OPEN_CONN,
+/* 14 */	HSI_LL_TX_STATE_TO_ACK,
+/* 15 */	HSI_LL_TX_STATE_TO_READY,
+/* 16 */	HSI_LL_TX_STATE_TO_CONF,
+/* 17 */	HSI_LL_TX_STATE_TO_CONF_ACK,
+/* 18 */	HSI_LL_TX_STATE_TO_TX,
+/* 19 */	HSI_LL_TX_STATE_TO_CLOSE,
+/* 20 */	HSI_LL_TX_STATE_SEND_BREAK,
+/* 21 */	HSI_LL_TX_STATE_WAIT_FOR_TX_COMPLETE,
 };
 
 /* Channel RX state */
 enum {
-	HSI_LL_RX_STATE_UNDEF,
-	HSI_LL_RX_STATE_CLOSED,
-	HSI_LL_RX_STATE_IDLE,
-	HSI_LL_RX_STATE_POWER_DOWN,
-	HSI_LL_RX_STATE_ERROR,
-	HSI_LL_RX_STATE_BLOCKED,
-	HSI_LL_RX_STATE_SEND_ACK,
-	HSI_LL_RX_STATE_SEND_NACK,
-	HSI_LL_RX_STATE_SEND_CONN_READY,
-	HSI_LL_RX_STATE_RX,
-	HSI_LL_RX_STATE_SEND_CONN_CLOSED,
-	HSI_LL_RX_STATE_SEND_CONN_CANCEL,
-	HSI_LL_RX_STATE_WAIT_FOR_CANCEL_CONN_ACK,
-	HSI_LL_RX_STATE_SEND_CONF_ACK,
-	HSI_LL_RX_STATE_SEND_CONF_NACK,
-	HSI_LL_RX_STATE_TO_RX,
-	HSI_LL_RX_STATE_TO_ACK,
-	HSI_LL_RX_STATE_TO_NACK,
-	HSI_LL_RX_STATE_TO_CONN_READY,
-	HSI_LL_RX_STATE_TO_CONN_CLOSED,
-	HSI_LL_RX_STATE_TO_CONN_CANCEL,
-	HSI_LL_RX_STATE_TO_CONN_CANCEL_ACK,
-	HSI_LL_RX_STATE_TO_CONF_ACK,
-	HSI_LL_RX_STATE_SEND_BREAK,
+/* 0 */	HSI_LL_RX_STATE_UNDEF,
+/* 1 */	HSI_LL_RX_STATE_CLOSED,
+/* 2 */	HSI_LL_RX_STATE_IDLE,
+/* 3 */	HSI_LL_RX_STATE_POWER_DOWN,
+/* 4 */	HSI_LL_RX_STATE_ERROR,
+/* 5 */	HSI_LL_RX_STATE_BLOCKED,
+/* 6 */	HSI_LL_RX_STATE_SEND_ACK,
+/* 7 */	HSI_LL_RX_STATE_SEND_NACK,
+/* 8 */	HSI_LL_RX_STATE_SEND_CONN_READY,
+/* 9 */	HSI_LL_RX_STATE_RX,
+/* 10 */	HSI_LL_RX_STATE_SEND_CONN_CLOSED,
+/* 11 */	HSI_LL_RX_STATE_SEND_CONN_CANCEL,
+/* 12 */	HSI_LL_RX_STATE_WAIT_FOR_CANCEL_CONN_ACK,
+/* 13 */	HSI_LL_RX_STATE_SEND_CONF_ACK,
+/* 14 */	HSI_LL_RX_STATE_SEND_CONF_NACK,
+/* 15 */	HSI_LL_RX_STATE_TO_RX,
+/* 16 */	HSI_LL_RX_STATE_TO_ACK,
+/* 17 */	HSI_LL_RX_STATE_TO_NACK,
+/* 18 */	HSI_LL_RX_STATE_TO_CONN_READY,
+/* 19 */	HSI_LL_RX_STATE_TO_CONN_CLOSED,
+/* 20 */	HSI_LL_RX_STATE_TO_CONN_CANCEL,
+/* 21 */	HSI_LL_RX_STATE_TO_CONN_CANCEL_ACK,
+/* 22 */	HSI_LL_RX_STATE_TO_CONF_ACK,
+/* 23 */	HSI_LL_RX_STATE_SEND_BREAK,
 };
 
 /* Timer initiator */
@@ -160,7 +169,7 @@ enum {
 	HIS_LL_TIMER_QUEUE_CMD_STOP,
 };
 
-/* struct hsi_ll_timer_Q - Timer Queue 
+/* struct hsi_ll_timer_Q - Timer Queue
  * @timer_cmd: timer commnad, start/stop
  * @timer_dir: direction tx/rx
  * @channel:   channel number
@@ -173,9 +182,9 @@ typedef struct hsi_ll_timer_Q {
 	unsigned int time_out;
 } ll_timer_Q;
 
-/* struct hsi_ll_cmd_queue - Command queue 
+/* struct hsi_ll_cmd_queue - Command queue
  * @command: HSI command
- * @channel: channel number 
+ * @channel: channel number
  * @phy_id:  TX/RX
  */
 typedef struct hsi_ll_cmd_queue {
@@ -184,12 +193,12 @@ typedef struct hsi_ll_cmd_queue {
 	unsigned int phy_id;
 } ll_cmd_queue;
 
-/* struct hsi_ll_tx_cmd_q - TX command Queue 
+/* struct hsi_ll_tx_cmd_q - TX command Queue
  * @read_index: read index
  * @write_index: write index
  * @count: queue count
  * @phy_id: TX/RX
- * @channel:channel number 
+ * @channel:channel number
  * @cmd_q: See struct hsi_ll_cmd_queue
  */
 typedef struct hsi_ll_tx_cmd_q {
@@ -201,7 +210,7 @@ typedef struct hsi_ll_tx_cmd_q {
 	struct hsi_ll_cmd_queue cmd_q[HSI_LL_MAX_CMD_Q_SIZE];
 } ll_tx_cmd_q;
 
-/* struct hsi_ll_tx_ch - TX channel structure 
+/* struct hsi_ll_tx_ch - TX channel structure
  * @state: TX channel state
  * @close_req: Close req indicator
  * @data_rate: data rate
@@ -212,6 +221,7 @@ typedef struct hsi_ll_tx_cmd_q {
  * @timer_id: timer id
  */
 typedef struct hsi_ll_tx_ch {
+	unsigned int channel;
 	unsigned int state;
 	unsigned int close_req;
 	unsigned int data_rate;
@@ -220,9 +230,12 @@ typedef struct hsi_ll_tx_ch {
 	void	    *buffer;
 	unsigned int size;
 	struct timer_list timer_id;
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+	struct work_struct retry_work;
+#endif
 } ll_tx_ch;
 
-/* struct hsi_ll_rx_ch - RX channel structure 
+/* struct hsi_ll_rx_ch - RX channel structure
  * @state: RX channel state
  * @buffer: pointer to buffer
  * @size: number of bytes
@@ -235,9 +248,12 @@ typedef struct hsi_ll_rx_ch {
 	unsigned int size;
 	unsigned int close_req;
 	struct timer_list timer_id;
+#if 1	
+	unsigned int nak_sent;
+#endif
 } ll_rx_ch;
 
-/* struct hsi_ll_channel - HSI LL channel structure 
+/* struct hsi_ll_channel - HSI LL channel structure
  * @open: channel open/close indicator
  * @tx: see struct hsi_ll_tx_ch
  * @rx: see struct hsi_ll_rx_ch
@@ -274,7 +290,7 @@ typedef struct hsi_ll_rx_cfg {
 	struct hsr_ctx ctx;
 } ll_rx_cfg;
 
-/* struct hsi_ll_data_struct - LL data structure 
+/* struct hsi_ll_data_struct - LL data structure
  * @initialized: HSI LL init state
  * @state: Current HSI LL state
  * @rx_cmd: HSI LL CMD from CP
@@ -368,6 +384,9 @@ typedef struct hsi_ll_if_struct {
 #if defined (HSI_LL_ENABLE_PM)
 	struct task_struct   *psv_th;
 #endif
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+	struct workqueue_struct *hsi_tx_retry_wq;
+#endif
 #if defined (HSI_LL_ENABLE_TIMERS)
 	struct tasklet_struct timer_tasklet;
 #endif
@@ -397,5 +416,9 @@ static int hsi_ll_rd_ctrl_ch_th(void *data);
 static int hsi_ll_wr_ctrl_ch_th(void *data);
 
 static void hsi_ll_wakeup_cp(unsigned int val);
+
+#if defined (HSI_LL_ENABLE_TX_RETRY_WQ)
+static void hsi_ll_retry_work(struct work_struct *work);
+#endif
 
 #endif /* __XMD_HSI_LL_INTERNAL_H__ */

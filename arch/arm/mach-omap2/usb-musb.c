@@ -73,7 +73,7 @@ static struct musb_hdrc_config musb_config = {
 #define LGE_USB_RNDIS_MDM_DIAG_GPS_UMS_ADB_PRODUCT_ID	0x61D7
 
 #define LGE_USB_VENDOR_NAME	"LG Electronics. Inc"
-#define LGE_COSMO_USB_DEVICE_NAME "Android"
+#define LGE_COSMO_USB_DEVICE_NAME "Cosmo"
 #elif defined (CONFIG_LGE_USB_4_LINUX_HOST)  // for LINUX PC
 #define LGE_USB_VENDOR_ID  		0x0bb4
 #define LGE_USB_PRODUCT_ID 		0x0c03
@@ -199,7 +199,7 @@ static struct android_usb_product usb_products[] = {
 
 #ifdef CONFIG_LGE_USB_RNDIS_FIST
 {
-	.product_id 	= LGE_USB_PRODUCT_ID,
+	.product_id 	= LGE_USB_PRODUCT_ID, // LGE_USB_RNDIS_MDM_DIAG_GPS_UMS_ADB_PRODUCT_ID,
 	.num_functions	= ARRAY_SIZE(usb_functions_lge_rndis_acm_diag_nmea_ums_adb),
 	.functions		= usb_functions_lge_rndis_acm_diag_nmea_ums_adb,
 },
@@ -267,28 +267,28 @@ static struct android_usb_product usb_products[] = {
 /* standard android USB platform data */
 static struct android_usb_platform_data andusb_plat = {
 #if  defined ( CONFIG_LGE_ANDRIOD_USB)
-	.vendor_id		= LGE_USB_VENDOR_ID,
+	.vendor_id		= LGE_USB_VENDOR_ID, // OMAP_VENDOR_ID,
 #ifdef 	CONFIG_LGE_USB_RNDIS_FIST
-	.product_id		= LGE_USB_PRODUCT_ID,
+	.product_id		= LGE_USB_PRODUCT_ID, //LGE_USB_RNDIS_MDM_DIAG_GPS_UMS_ADB_PRODUCT_ID, //LGE_USB_RNDIS_ADB_PRODUCT_ID, // , //OMAP_PRODUCT_ID,
 #else
-	.product_id 	= LGE_USB_PRODUCT_ID,
-#endif
-	.manufacturer_name	= LGE_USB_VENDOR_NAME,
-	.product_name           = LGE_COSMO_USB_DEVICE_NAME,
-#else
+	.product_id 	= LGE_USB_PRODUCT_ID, //
+#endif // 1	
+	.manufacturer_name	= LGE_USB_VENDOR_NAME, // "Texas Instruments Inc.",
+	.product_name           = LGE_COSMO_USB_DEVICE_NAME, //"Cosmo USB Device", // hunsoo.lee "OMAP4",
+#else // #if  defined ( CONFIG_LGE_ANDRIOD_USB)
 	.vendor_id		= OMAP_VENDOR_ID,
 	.product_id		= OMAP_UMS_PRODUCT_ID,
 	.manufacturer_name	= "Texas Instruments Inc.",
 	.product_name		= "OMAP-3/4",
-#endif
+#endif // #if  defined ( CONFIG_LGE_ANDRIOD_USB)
 	.serial_number		= device_serial,
 	.num_products		= ARRAY_SIZE(usb_products),
 	.products		= usb_products,
 #ifdef CONFIG_LGE_USB_RNDIS_FIST
-	.num_functions		= ARRAY_SIZE(usb_functions_lge_rndis_acm_diag_nmea_ums_adb),
+	.num_functions		= ARRAY_SIZE(usb_functions_lge_rndis_acm_diag_nmea_ums_adb),// hunsoo.lee test 
 	.functions		= usb_functions_lge_rndis_acm_diag_nmea_ums_adb, // 
 #else
-	.num_functions		= ARRAY_SIZE(usb_functions_all),// ARRAY_SIZE(usb_functions_lge_rndis_acm_diag_nmea_ums_adb),
+	.num_functions		= ARRAY_SIZE(usb_functions_all),// ARRAY_SIZE(usb_functions_lge_rndis_acm_diag_nmea_ums_adb),// hunsoo.lee test 
 	.functions		= usb_functions_all, //usb_functions_lge_rndis_acm_diag_nmea_ums_adb, // 
 #endif
 };
@@ -304,10 +304,10 @@ static struct platform_device androidusb_device = {
 #ifdef CONFIG_USB_ANDROID_MASS_STORAGE
 static struct usb_mass_storage_platform_data usbms_plat = {
 #if  defined ( CONFIG_LGE_ANDRIOD_USB)
-	.vendor		= "LGE",
-	.product	= "Android", // "OMAP4",
+	.vendor		= "LGE", // hunsoo.lee "Texas Instruments Inc.",
+	.product	= "Cosmo", // "OMAP4",
 	.release	= 1,
-	.nluns		= 2,
+	.nluns		= 2, // hunsoo.lee 1,
 #else
 	.vendor		= "Texas Instruments Inc.",
 	.product	= "OMAP4",
@@ -330,7 +330,7 @@ static struct usb_ether_platform_data rndis_pdata = {
 	/* ethaddr is filled by board_serialno_setup */
 #if defined (CONFIG_LGE_ANDRIOD_USB)	
 	.vendorID	= LGE_USB_VENDOR_ID,
-	.vendorDescr	= LGE_COSMO_USB_DEVICE_NAME,
+	.vendorDescr	= LGE_COSMO_USB_DEVICE_NAME, //  "Texas Instruments Inc.",
 #else // #if defined (CONFIG_LGE_ANDRIOD_USB)	
 	.vendorID	= OMAP_VENDOR_ID,
 	.vendorDescr	= "Texas Instruments Inc.",

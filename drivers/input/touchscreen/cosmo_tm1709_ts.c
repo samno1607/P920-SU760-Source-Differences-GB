@@ -19,15 +19,23 @@ PARTICULAR PURPOSE.  See the * GNU General Public License for more details. * */
 #include <linux/synaptics_i2c_rmi.h>
 #include <mach/gpio.h>
 
-#if 0
+#if 0   //COSMO_TA_NOISE_DEBUG
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <linux/syscalls.h>
 #endif
 
 #if !defined(CONFIG_MACH_LGE_COSMO_EVB_C) && !defined(CONFIG_MACH_LGE_COSMO_REV_A) && !defined(CONFIG_MACH_LGE_COSMO_REV_B) && !defined(CONFIG_MACH_LGE_COSMO_REV_C)
-#include "synaptics_ts_firmware.h"
+//REV_D
+#if defined (CONFIG_MACH_LGE_CX2) 
+#include "synaptics_ts_firmware_cx2.h"
+#define FW_IMAGE_SIZE 	28929 		
+unsigned char SynapticsFirmware[FW_IMAGE_SIZE];
 #else
+#include "synaptics_ts_firmware.h"
+#endif
+#else
+//REV_C
 #include "synaptics_ts_firmware_rev_c.h"
 #endif
 
@@ -101,14 +109,12 @@ PARTICULAR PURPOSE.  See the * GNU General Public License for more details. * */
 
 #endif //COSMO_SYNAPTICS_SUPPORT_FW_UPGRADE
 
-
 #define FREQ_MIN 0 /* lowest frequency at or above target */
 #define FREQ_MAX 1  /* highest frequency below or at target */
 #define BASE_CPU 0
 
 extern int cpufreq_driver_target_max_bycpuid(unsigned int cpu,
 		unsigned int is_max);
-
 
 struct synaptics_ts_data {
 	uint16_t addr;
@@ -285,10 +291,12 @@ unsigned char  touch_fw_version = 0;
 
 #if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC)
 #define COSMO_VALID_TOUCHKEY_COUNT	3
+// Darren.kang move for global usage
 static unsigned int button_map[COSMO_VALID_TOUCHKEY_COUNT + 1] = {KEY_MENU, KEY_HOME, KEY_BACK, KEY_UNKNOWN};
 #else
 
 #define COSMO_VALID_TOUCHKEY_COUNT	4
+// Darren.kang move for global usage
 static unsigned int button_map[COSMO_VALID_TOUCHKEY_COUNT + 1] = {KEY_MENU, KEY_HOME, KEY_BACK, KEY_SEARCH, KEY_UNKNOWN};
 #endif
 #ifdef COSMO_USED_TIMESTAMP
@@ -376,7 +384,8 @@ static bool synaptics_ts_handle_is_ignorearea(int xposition, int yposition)
 		return true;
 	}	
 
-	if(xposition >= 1103   && yposition >= 1769)
+//	if(xposition >= 1076   && yposition >= 1769)
+	if(xposition >= 1103   && yposition >= 1769) //KeyPad Hidden
 	{
 		DEBUG_MSG("%s() ------ 4 [%d][%d]\n", __func__, xposition, yposition);
 		return true;
@@ -523,6 +532,8 @@ static void synaptics_ts_NoMeltChange2(struct synaptics_ts_data* ts)
 				  {
 					  if(++(ts->melt_tapcount) > 2)
 					  {
+							//clipZ[0] = 0x00;
+							//m_ret = SynaWriteRegister(0xf0, &clipZ[0], 1); //set no melting
 							i2c_smbus_write_byte_data(ts->client, 0xf0, COSMO_MELT_SYNAPTICS_NOMELT_VALUE);
 							DEBUG_MSG("COSMO_MELT_ENTER_NOMELT\n");
 							ts->melt_mode = 2;
@@ -555,6 +566,8 @@ static void synaptics_ts_NoMeltChange2(struct synaptics_ts_data* ts)
 		{			
 			if(ts->melt_fs0 == 0)
 			{
+				//clipZ[0] = 0x01;
+				//m_ret = SynaWriteRegister(0xf0, &clipZ[0], 1); //set melting
 				i2c_smbus_write_byte_data(ts->client, 0xf0, COSMO_MELT_SYNAPTICS_MELT_VALUE);
 				DEBUG_MSG("COSMO_MELT_ENTER_MELT fs0\n");				
 				ts->melt_mode = 1;
@@ -567,6 +580,8 @@ static void synaptics_ts_NoMeltChange2(struct synaptics_ts_data* ts)
 
 			if((((ts->melt_direction == 1) | (ts->melt_direction == -1)) & (ts->melt_distance > 3)))
 			{
+				//clipZ[0] = 0x00;
+				//m_ret = SynaWriteRegister(0xf0, &clipZ[0], 1); //set no melting
 				i2c_smbus_write_byte_data(ts->client, 0xf0, COSMO_MELT_SYNAPTICS_NOMELT_VALUE);
 				DEBUG_MSG("COSMO_MELT_ENTER_NOMELT fix\n");				
 				ts->melt_mode = 0;
@@ -603,6 +618,8 @@ static void synaptics_ts_NoMeltChange2(struct synaptics_ts_data* ts)
 
 				if((ts->melt_zigcntx > 5) | (ts->melt_zigcnty > 5))
 				{
+					//clipZ[0] = 0x01;
+					//m_ret = SynaWriteRegister(0xf0, &clipZ[0], 1); //set melting
 					i2c_smbus_write_byte_data(ts->client, 0xf0, COSMO_MELT_SYNAPTICS_MELT_VALUE);
 					DEBUG_MSG("COSMO_MELT_ENTER_MELT Zigcnt or sameposition \n");	
 					ts->melt_mode = 1;
@@ -638,6 +655,8 @@ static void synaptics_ts_NoMeltChange2(struct synaptics_ts_data* ts)
 		{
 			if(ts->melt_fscc++ > 5)
 			{
+				//clipZ[0] = 0x01;
+				//m_ret = SynaWriteRegister(0xf0, &clipZ[0], 1); //set melting
 				i2c_smbus_write_byte_data(ts->client, 0xf0, COSMO_MELT_SYNAPTICS_MELT_VALUE);
 				DEBUG_MSG("COSMO_MELT_ENTER_MELT fscc\n");					
 				ts->melt_mode = 1;
@@ -677,14 +696,30 @@ static int adjust_Y[FINGER_MAX];
 static void synaptics_touch_adjust_position(int finger_num, int x_value, int y_value)
 {
 
+#if 1
 	unsigned long distant;
 
 	distant = int_sqrt(SQUARE(adjust_X[finger_num] - x_value) + SQUARE(adjust_Y[finger_num] - y_value));
 
 	if(distant <= ADJUST_BASIS_LEVEL_5)
 	{
-		adjust_X[finger_num] = (adjust_X[finger_num] * ADJUST_FACTOR_LEVEL_5 + x_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
-		adjust_Y[finger_num] = (adjust_Y[finger_num] * ADJUST_FACTOR_LEVEL_5 + y_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
+#if 1
+			adjust_X[finger_num] = (adjust_X[finger_num] * ADJUST_FACTOR_LEVEL_5 + x_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
+			adjust_Y[finger_num] = (adjust_Y[finger_num] * ADJUST_FACTOR_LEVEL_5 + y_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
+#else	
+		int distantX = abs(adjust_X[finger_num] - x_value);
+		int distantY = abs(adjust_Y[finger_num] - y_value);
+
+		//printk("[%s] distant[%d] [%d][%d]\n", __func__, distant, distantX, distantY);
+
+		if(distantX > ADJUST_INGNORE_LEVEL || distantY > ADJUST_INGNORE_LEVEL)
+		{
+			//adjust_X[finger_num] = (adjust_X[finger_num] * ADJUST_FACTOR_LEVEL_5 + x_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
+			//adjust_Y[finger_num] = (adjust_Y[finger_num] * ADJUST_FACTOR_LEVEL_5 + y_value * ADJUST_FACTOR_BASE) / (ADJUST_FACTOR_LEVEL_5 + ADJUST_FACTOR_BASE);
+			adjust_X[finger_num] = x_value;
+			adjust_Y[finger_num] = y_value;
+		}
+#endif
 	}	
 	else if(distant <= ADJUST_BASIS_LEVEL_4)
 	{
@@ -711,6 +746,18 @@ static void synaptics_touch_adjust_position(int finger_num, int x_value, int y_v
 		adjust_X[finger_num] = x_value;
 		adjust_Y[finger_num] = y_value;
 	}
+#else
+	unsigned long distantX = abs(adjust_X[finger_num] - x_value);
+	unsigned long distantY = abs(adjust_Y[finger_num] - y_value);
+
+	printk("[%s] [%d][%d]\n", __func__, distantX, distantY);
+
+	if(distantX > 3 || distantY > 3)
+	{
+		adjust_X[finger_num] = x_value;
+		adjust_Y[finger_num] = y_value; 	
+	}
+#endif
 }
 
 static int synaptics_ts_get_burton_index(struct synaptics_ts_data* ts, int x, int y)
@@ -741,6 +788,13 @@ static int synaptics_ts_get_burton_index(struct synaptics_ts_data* ts, int x, in
 #else
 		int i = x%280;
 #endif
+		/* for whole button trimming
+		if( i < COSMO_BTN_TRIM_WIDTH || i > COSMO_BTN_EDGE_WIDTH - COSMO_BTN_TRIM_WIDTH)
+		{
+			//touch position is out of valid button area
+			btn_index = COSMO_VALID_TOUCHKEY_COUNT; // set KEY_UNKNOWN			
+		}
+		*/
 		if((i < COSMO_BTN_TRIM_WIDTH && btn_index == 0) || (i > COSMO_BTN_EDGE_WIDTH - COSMO_BTN_TRIM_WIDTH && btn_index == COSMO_VALID_TOUCHKEY_COUNT -1))
 			//touch position is out of valid button area
 			btn_index = COSMO_VALID_TOUCHKEY_COUNT; // set KEY_UNKNOWN			
@@ -766,6 +820,11 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 		return ret;
 
 
+	//if(finger_index == 0)
+	//{
+	//	i2c_smbus_read_i2c_block_data(ts->client, COSMO_SYNAPTICS_REG_FINGER_STATUS0, 3, (u8*)&(ts_reg_data.finger_state_reg));	
+	//}
+
 	// check pressed
 	pressed = (ts_reg_data.finger_state_reg[finger_index/COSMO_COUNT_PER_FINGER_STATUS] & (0x03 << divided_index));
 
@@ -779,6 +838,12 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 		curr_ts_data.X_position[finger_index] = (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
 		curr_ts_data.Y_position[finger_index] = (int)TS_SNTS_GET_Y_POSITION(ts_reg_data.Y_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg); 	
 
+		////////////////////////////////////////////////////////////debug //////////////////////////////////////////
+		//if(finger_index == 0 && ts->melt_mode!=0)
+		//{
+		//	printk("touch debug[%d][%d]\n", curr_ts_data.X_position[finger_index], curr_ts_data.Y_position[finger_index]);
+		//}
+		//////////////////////////////////////////////////////debug////////////////////////////////////////
 
 
 		#ifdef COSMO_TOUCH_GRIP_SUPPRESSION 
@@ -804,6 +869,21 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 			curr_ts_data.width[finger_index] = (int)width;
 			curr_ts_data.pressure[finger_index] = (int)ts_reg_data.Z_finger0_reg;
 
+#if 1
+		//printk("[%s] Before[%d][%d] \n", __func__, curr_ts_data.X_position[finger_index], curr_ts_data.Y_position[finger_index]);
+		#if 0
+		if(adjust_X[finger_index] != 0 && adjust_X[finger_index] != 0 
+			&& (abs(curr_ts_data.X_position[finger_index]-adjust_X[finger_index]) > 100 || abs(curr_ts_data.Y_position[finger_index]-adjust_Y[finger_index]) > 100) 
+//			&& (adjust_Width[finger_index] < 2 || curr_ts_data.width[finger_index]< 2 || adjust_Pressure[finger_index] < 30)
+			)
+		{
+			adjust_X[finger_index] = curr_ts_data.X_position[finger_index];
+			adjust_Y[finger_index] = curr_ts_data.Y_position[finger_index];	
+			DEBUG_MSG("%s() - 3 [%d]\n", __func__, finger_index);
+			return;		
+		}
+		else
+		#endif
 		{
 			synaptics_touch_adjust_position(finger_index, curr_ts_data.X_position[finger_index], curr_ts_data.Y_position[finger_index]);
 			curr_ts_data.X_position[finger_index] = adjust_X[finger_index];
@@ -811,6 +891,8 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 		}		
 
 
+		//printk("[%s] After [%d][%d] \n", __func__, curr_ts_data.X_position[finger_index], curr_ts_data.Y_position[finger_index]);
+#endif
 
 		switch(finger_index)
 		{
@@ -828,11 +910,13 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 								}
 								else
 								{
+									//synaptics_ts_handle_detected_whole_up_event(ts);
 									int i =0;
 									for (i = 0; i < COSMO_VALID_TOUCHKEY_COUNT; i++) {
 										const u32 mask = (1 << i);
 										if ((ts->button_state & mask)) 
 										{	
+											// if down event is already sent , up event should be sent
 											if (ts->pending_touchkey == COSMO_PENDING_HANDLED)
 											{
 												DEBUG_MSG("%s() 8 btn_index[%d] Release \n", __func__, button_map[i]);
@@ -893,6 +977,7 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 				break;
 			case 1: //second finger special care
 				#ifdef COSMO_PENDING_TOUCHKEY
+					// if second touch is detected , pended key is ignored
 					if(ts->pending_touchkey >= COSMO_PENDING_IDLE_STATE)
 					{
 						ts->pending_touchkey = COSMO_PENDING_SECOND_TOUCH_DETECTED;	
@@ -900,9 +985,18 @@ static int synaptics_handle_single_touch(struct synaptics_ts_data* ts, int finge
 					}
 				#endif
 					ts_pre_state = 1;
+					//break; <---- disable because below code is shared
 			default: // common handling
 			
 					ret = synaptics_ts_is_more_pressed_touch(finger_index+1);
+			//		curr_ts_data.X_position[1] = (int)TS_SNTS_GET_X_POSITION(ts_reg_data.X_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg);
+		  	//		curr_ts_data.Y_position[1] = (int)TS_SNTS_GET_Y_POSITION(ts_reg_data.Y_high_position_finger0_reg, ts_reg_data.XY_low_position_finger0_reg); 			
+					
+		    /*    	if ((((ts_reg_data.XY_width_finger0_reg & 240) >> 4) - (ts_reg_data.XY_width_finger0_reg & 15)) > 0)
+						width = (ts_reg_data.XY_width_finger0_reg & 240) >> 4;
+					else
+						width = ts_reg_data.XY_width_finger0_reg & 15;
+			*/		
 		       		input_report_abs(ts->input_dev, ABS_MT_POSITION_X, curr_ts_data.X_position[finger_index]);
 					input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, curr_ts_data.Y_position[finger_index]);	
 					input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, curr_ts_data.pressure[finger_index]);
@@ -1007,6 +1101,7 @@ static void synaptics_ts_init_delayed_work(struct work_struct *work)
 
 	ret = i2c_smbus_write_byte_data(ts->client, SYNAPTICS_INT_REG, SYNAPTICS_INT_ABS0);
 	
+//	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_REPORT_MODE,		COSMO_SYNAPTICS_VAL_REDUCE_REPORT_MODE|COSMO_SYNAPTICS_VAL_ABS_POS_FILTER);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_REPORT_MODE,		COSMO_SYNAPTICS_VAL_ABS_POS_FILTER);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_DELTA_X_THRESH,	COSMO_SYNAPTICS_VAL_THRESHOLD);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_DELTA_Y_THRESH,	COSMO_SYNAPTICS_VAL_THRESHOLD);
@@ -1059,6 +1154,9 @@ static void synaptics_ts_reset_delayed_work(struct work_struct *work)
 	int ret;
 	struct synaptics_ts_data *ts = container_of(work, struct synaptics_ts_data, reset_delayed_work);
 
+	input_mt_sync(ts->input_dev);
+	input_sync(ts->input_dev);
+
 #ifdef COSMO_USED_RESET_PIN_IN_SUSPEND_MDELAY
 	if(ts->duringSuspend == 1)
 	{
@@ -1067,7 +1165,11 @@ static void synaptics_ts_reset_delayed_work(struct work_struct *work)
 	}
 
 	gpio_direction_output(14, 0);	// OUTPUT 
+#if 1
 		udelay(10);
+#else
+		mdelay(g_handIgnoreValue);
+#endif
 	gpio_set_value(14, 1);
 
 	mdelay(300);
@@ -1113,6 +1215,7 @@ static void synaptics_ts_reset_delayed_work(struct work_struct *work)
 
 	ret = i2c_smbus_write_byte_data(ts->client, SYNAPTICS_INT_REG, SYNAPTICS_INT_ABS0);
 	
+//	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_REPORT_MODE,		COSMO_SYNAPTICS_VAL_REDUCE_REPORT_MODE|COSMO_SYNAPTICS_VAL_ABS_POS_FILTER);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_REPORT_MODE,		COSMO_SYNAPTICS_VAL_ABS_POS_FILTER);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_DELTA_X_THRESH,	COSMO_SYNAPTICS_VAL_THRESHOLD);
 	i2c_smbus_write_byte_data(ts->client, COSMO_SYNAPTICS_REG_DELTA_Y_THRESH,	COSMO_SYNAPTICS_VAL_THRESHOLD);
@@ -1231,6 +1334,13 @@ static void synaptics_ts_work_func(struct work_struct *work)
 		input_sync(ts->input_dev);	
 	}
 	
+	{
+#if 0
+		unsigned int max_freq;
+		unsigned cpu = BASE_CPU; 
+		cpufreq_driver_target_max_bycpuid(cpu,FREQ_MAX);
+#endif
+	}
 
 }
 
@@ -1273,14 +1383,29 @@ static unsigned char synaptics_ts_check_fwver(struct i2c_client *client)
 static ssize_t	version_show(struct device* dev, struct device_attribute* attr,
 								const char* buf, size_t count)
 {
+#if 1
 	struct i2c_client *client = to_i2c_client(dev);
 	touch_fw_version = synaptics_ts_check_fwver(client);
 
 	return snprintf(buf, PAGE_SIZE,"%d\n", touch_fw_version);
+#else
+	struct i2c_client*	client	=	to_i2c_client(dev);
+	int		family, revision;
+
+	if ((family = i2c_smbus_read_byte_data(client, SYNAPTICS_FAMILY)) < 0)
+		goto	err;
+
+	if ((revision = i2c_smbus_read_byte_data(client, SYNAPTICS_REVISION)) < 0)
+		goto	err;
+
+	return	snprintf(buf, PAGE_SIZE, "%d.%d\n", family, revision);
+
+err:
+	return	snprintf(buf, PAGE_SIZE, "Unknown\n");
+#endif	
 }
 
 static DEVICE_ATTR(version, 0444, version_show, NULL);
-
 
 
 #ifdef COSMO_TOUCH_GRIP_SUPPRESSION
@@ -1313,7 +1438,6 @@ ssize_t touch_gripsuppression_store(struct device *dev, struct device_attribute 
 
 DEVICE_ATTR(gripsuppression, 0664, touch_gripsuppression_show, touch_gripsuppression_store);
 #endif /* COSMO_TOUCH_GRIP_SUPPRESSION */
-
 
 #ifdef COSMO_TOUCH_HAND_SUPPRESSION
 
@@ -1412,6 +1536,14 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 	////////////////////////////
 
 	DEBUG_MSG("[Touch Driver] Synaptics_UpgradeFirmware [START]\n");
+/*
+	if(!(synaptics_ts_check_fwver(client) < SynapticsFirmware[0x1F]))
+	{
+		// Firmware Upgrade does not necessary!!!!
+		DEBUG_MSG("[Touch Driver] Synaptics_UpgradeFirmware does not necessary!!!!\n");
+		return true;
+	}
+*/
 #if SYNAPTICS_TOUCH_MULTI_PANEL_SUPPORT
 	if (ts->product_value==1)
 	{
@@ -1449,8 +1581,14 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 		DEBUG_MSG("[Touch Driver] Synaptics_UpgradeFirmware CurrentVersion[%d] SynapticsFirmware[%d]\n", current_fw_ver, SynapticsFirmware[0x1F]);
 
 		#if !defined(CONFIG_MACH_LGE_COSMO_EVB_C) && !defined(CONFIG_MACH_LGE_COSMO_REV_A) && !defined(CONFIG_MACH_LGE_COSMO_REV_B) && !defined(CONFIG_MACH_LGE_COSMO_REV_C)
-
+		//REV_D
+		#if defined (CONFIG_MACH_LGE_CX2) 
+		uint8_t fw_image_ver=0;
+		fw_image_ver=SynapticsFirmware[0x1F];
+		if( current_fw_ver >= fw_image_ver )
+		#else
 		if((current_fw_ver <= 0 || current_fw_ver == 0x01 || current_fw_ver == 0x04 || current_fw_ver == 0x07 || current_fw_ver == 0x65))
+	        #endif
 		{
 			// Firmware Upgrade does not necessary!!!!
 			DEBUG_MSG("[Touch Driver] Synaptics_UpgradeFirmware does not necessary!!!!\n");
@@ -1467,6 +1605,7 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 			}
 		}
 		#else
+		//REV_C
 		if(current_fw_ver == 0x01 && SynapticsFirmware[0x1F] == 0x65)
 		{
 			if((current_fw_ver >= 0x64 && SynapticsFirmware[0x1F] >= 0x64) || (current_fw_ver < 0x64 && SynapticsFirmware[0x1F] < 0x64))
@@ -1548,6 +1687,8 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 		return true;
 	}
 
+	// Flash Write Ready - Flash Command Enable & Erase
+	//i2c_smbus_write_block_data(client, BlockDataStartAddr, sizeof(bootloader_id), &bootloader_id[0]);
 	// How can i use 'i2c_smbus_write_block_data'
 	for(i = 0; i < sizeof(bootloader_id); i++)
 	{
@@ -1577,6 +1718,7 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 
 	DEBUG_MSG("[TOUCH] Synaptics_UpgradeFirmware :: Flash Program Enable Setup Complete\n");
 
+	//i2c_smbus_write_block_data(client, BlockDataStartAddr, sizeof(bootloader_id), &bootloader_id[0]);
 	// How can i use 'i2c_smbus_write_block_data'
 	for(i = 0; i < sizeof(bootloader_id); i++)
 	{
@@ -1613,12 +1755,16 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 		temp_array[0] = i & 0xff;
 		temp_array[1] = (i & 0xff00) >> 8;
 
+		// Write Block Number
+		//i2c_smbus_write_block_data(client, BlockNumAddr, sizeof(temp_array), &temp_array[0]);
 		// How can i use 'i2c_smbus_write_block_data'
 		for(j = 0; j < sizeof(temp_array); j++)
 		{
 			i2c_smbus_write_byte_data(client, BlockNumAddr+j, temp_array[j]);
 		}
 
+		// Write Data Block&SynapticsFirmware[0]
+		//i2c_smbus_write_block_data(client, BlockDataStartAddr, ts_block_size, &SynapticsFirmware[0x100+i*ts_block_size]);
 		// How can i use 'i2c_smbus_write_block_data'
 		for(j = 0; j < ts_block_size; j++)
 		{
@@ -1654,6 +1800,8 @@ static bool synaptics_ts_fw_upgrade(struct i2c_client *client)
 			i2c_smbus_write_byte_data(client, BlockNumAddr+j, temp_array[j]);
 		}
 
+		// Write Data Block
+		//i2c_smbus_write_block_data(client, BlockDataStartAddr, ts_block_size, &SynapticsFirmware[0x100+m_firmwareImgSize+i*ts_block_size]);
 		// How can i use 'i2c_smbus_write_block_data'
 		for(j = 0; j < ts_block_size; j++)
 		{
@@ -1813,6 +1961,18 @@ static int synaptics_ts_probe(
   	memset(&curr_ts_data, 0x0, sizeof(ts_finger_data));
 
 	#ifdef COSMO_SYNAPTICS_SUPPORT_FW_UPGRADE
+	#if defined (CONFIG_MACH_LGE_CX2)		
+	unsigned char RMI_Query_BaseAddr;
+	RMI_Query_BaseAddr = i2c_smbus_read_byte_data(ts->client, SYNAPTICS_RMI_QUERY_BASE_REG);
+	unsigned char ProductID_Addr;
+	s32 tempPid=0;
+	ProductID_Addr = RMI_Query_BaseAddr+13;
+	tempPid = i2c_smbus_read_byte_data(ts->client, ProductID_Addr);
+	if (tempPid == 50) 
+		memcpy(SynapticsFirmware, SynapticsFirmware_TM2085, sizeof(SynapticsFirmware_TM2085));
+	else
+		memcpy(SynapticsFirmware, SynapticsFirmware_TM1955, sizeof(SynapticsFirmware_TM1955));
+	#endif	
 	synaptics_ts_fw_upgrade(ts->client);
 	#endif
 	touch_fw_version = synaptics_ts_check_fwver(ts->client);
@@ -1883,7 +2043,6 @@ static int synaptics_ts_probe(
 
 	ret = device_create_file(&client->dev, &dev_attr_version);
 
-	
 #ifdef COSMO_TOUCH_GRIP_SUPPRESSION
 		ret = device_create_file(&client->dev, &dev_attr_gripsuppression);
 		if (ret) {
@@ -1961,6 +2120,7 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	ret = cancel_work_sync(&ts->work);
 	if (ret && ts->use_irq) {
 		printk(KERN_ERR "TouchScreen-tm709 Suspend Failed\n");
+		//return -EBUSY;
 	}
 
 	DEBUG_MSG("synaptics_ts_suspend\n");
@@ -1968,6 +2128,14 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	ret = i2c_smbus_write_byte_data(ts->client, SYNAPTICS_CONTROL_REG, SYNAPTICS_CONTROL_SLEEP|SYNAPTICS_CONTROL_CONFIG); /* sleep */
 	if (ret < 0)
 		printk(KERN_ERR "synaptics_ts_suspend: i2c_smbus_write_byte_data failed\n");
+
+#if 0
+	if (ts->power) {
+		ret = ts->power(0);
+		if (ret < 0)
+			DEBUG_MSG(KERN_ERR "synaptics_ts_resume power off failed\n");
+	}
+#endif
 
 #ifdef COSMO_PENDING_TOUCHKEY
 	//init pending value
@@ -1982,6 +2150,13 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 #endif
 
 
+#if 0
+#ifdef COSMO_USED_RESET_PIN_IN_SUSPEND
+#if !defined(CONFIG_MACH_LGE_COSMO_EVB_C) && !defined(CONFIG_MACH_LGE_COSMO_REV_A) && !defined(CONFIG_MACH_LGE_COSMO_REV_B) && !defined(CONFIG_MACH_LGE_COSMO_REV_C)
+	gpio_set_value(14, 0);
+#endif
+#endif
+#endif
 	return 0;
 }
 
@@ -1994,6 +2169,13 @@ static int synaptics_ts_resume(struct i2c_client *client)
 
 	printk("%s() - 3 [%d]\n", __func__, gpiovalue);
 
+#if 0
+	if (ts->power) {
+		ret = ts->power(1);
+		if (ret < 0)
+			DEBUG_MSG(KERN_ERR "synaptics_ts_resume power on failed\n");
+	}
+#endif
 
 #ifdef COSMO_USED_RESET_PIN_IN_SUSPEND
 #if !defined(CONFIG_MACH_LGE_COSMO_EVB_C) && !defined(CONFIG_MACH_LGE_COSMO_REV_A) && !defined(CONFIG_MACH_LGE_COSMO_REV_B) && !defined(CONFIG_MACH_LGE_COSMO_REV_C)
@@ -2004,7 +2186,11 @@ static int synaptics_ts_resume(struct i2c_client *client)
 	schedule_delayed_work(&ts->reset_delayed_work, msecs_to_jiffies(1));
 #else
 	gpio_direction_output(14, 0);	// OUTPUT 
+#if 1
 		udelay(10);
+#else
+		mdelay(g_handIgnoreValue);
+#endif
 	gpio_set_value(14, 1);
 
 	cancel_delayed_work_sync(&ts->reset_delayed_work);

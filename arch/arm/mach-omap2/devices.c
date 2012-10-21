@@ -501,10 +501,10 @@ static int omap_mcspi_init(struct omap_hwmod *oh, void *user)
 		pdata->dma_mode		= 0;
 		pdata->force_cs_mode		= 1;
 		pdata->fifo_depth			= 0;
-#else
+#else // LGE_FW_TDMB
 		pdata->num_cs = 4;
 		pdata->force_cs_mode = 1;
-#endif
+#endif // LGE_FW_TDMB
 	
 		break;
 		
@@ -949,17 +949,19 @@ void __init omap_display_init(struct omap_dss_board_info *board_data)
 	defined(CONFIG_VIDEO_OMAP2_VOUT_MODULE)
 #if defined(CONFIG_FB_OMAP2) || defined(CONFIG_FB_OMAP2_MODULE)
 #ifdef CONFIG_ARCH_OMAP4
-static struct resource omap_vout_resource[4 - CONFIG_FB_OMAP2_NUM_FBS] = {
+static struct resource omap_vout_resource[4 - CONFIG_FB_OMAP2_NUM_FBS] = 
 #else
-static struct resource omap_vout_resource[3 - CONFIG_FB_OMAP2_NUM_FBS] = {
+static struct resource omap_vout_resource[3 - CONFIG_FB_OMAP2_NUM_FBS] =
 #endif
+{
 };
 #else
 #ifdef CONFIG_ARCH_OMAP4
-static struct resource omap_vout_resource[3] = {
+static struct resource omap_vout_resource[3] = 
 #else
-static struct resource omap_vout_resource[2] = {
+static struct resource omap_vout_resource[2] = 
 #endif
+}
 };
 #endif
 

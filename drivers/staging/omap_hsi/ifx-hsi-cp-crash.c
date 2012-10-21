@@ -1,5 +1,5 @@
 
-/* arch/arm/mach-omap2/xmd-hsi-lge.c
+/* ifx-hsi-cp-crash.c
  *
  * Copyright (C) 2010 LGE. All rights reserved.
  * Author: Jaesung.woo <jaesung.woo@lge.com>
@@ -18,19 +18,23 @@
 #include <linux/irq.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
+#include <linux/rtc.h>
 #include <mach/gpio.h>
 #include <plat/lge_err_handler.h>
 #include <plat/lge_nvdata_handler.h>
 
 #include "hsi_driver.h"
 
+#include "xmd-ch.h"
+#include "xmd-hsi-ll-if.h"
 
 #define CP_CRASH_INT_N  			26
 
-static struct work_struct CP_CRASH_INT_wq;
+static struct delayed_work	cp_crash_int_delayed_wq;
+
 
 #ifndef ENABLE_CP_CRASH_RESET
-#define EVENT_KEY 				KEY_F24 		//194, Need to be changed
+#define EVENT_KEY 				KEY_F24
 static struct input_dev *in_dev = NULL;
 #endif
 
@@ -38,7 +42,7 @@ static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq);
 static irqreturn_t CP_CRASH_interrupt_handler(s32 irq, void *data);
 
 
-int IFX_CP_CRASH_DUMP_INIT(void *dev)
+int IFX_CP_CRASH_DUMP_INIT(void)
 {
 	int ret = 0;
 	
@@ -57,7 +61,7 @@ int IFX_CP_CRASH_DUMP_INIT(void *dev)
 	}
 
 	/* Registers MUIC work queue function */
-	INIT_WORK(&CP_CRASH_INT_wq, CP_CRASH_wq_func);
+	INIT_DELAYED_WORK(&cp_crash_int_delayed_wq, CP_CRASH_wq_func);
 
 	/* 
 	 * Set up an IRQ line and enable the involved interrupt handler.
@@ -65,10 +69,10 @@ int IFX_CP_CRASH_DUMP_INIT(void *dev)
 	 * muic_interrupt_handler merely calls schedule_work() with muic_wq_func().
 	 * muic_wq_func() actually performs the accessory detection.
 	 */
-	ret = request_irq(gpio_to_irq(CP_CRASH_INT_N), CP_CRASH_interrupt_handler, IRQF_TRIGGER_RISING, "cp_crash_irq", dev);
+	ret = request_irq(gpio_to_irq(CP_CRASH_INT_N), CP_CRASH_interrupt_handler, IRQF_TRIGGER_RISING, "cp_crash_irq", NULL);
 	if (ret < 0) {
 		printk(KERN_INFO "[CP CRASH IRQ] GPIO#%03d IRQ line set up failed!\n", CP_CRASH_INT_N);
-		free_irq(gpio_to_irq(CP_CRASH_INT_N), dev);
+		free_irq(gpio_to_irq(CP_CRASH_INT_N), NULL);
 		return -ENOSYS;
 	}
 
@@ -83,7 +87,7 @@ int IFX_CP_CRASH_DUMP_INIT(void *dev)
 	in_dev->keybit[BIT_WORD(EVENT_KEY)] = BIT_MASK(EVENT_KEY);
 	in_dev->name = "hsi";
 	in_dev->phys = "hsi/input0";
-	in_dev->dev.parent = dev;
+	in_dev->dev.parent = NULL;
 
 	ret = input_register_device(in_dev);
 	if (ret) {
@@ -95,44 +99,82 @@ int IFX_CP_CRASH_DUMP_INIT(void *dev)
 
 }
 
-
 static void CP_CRASH_wq_func(struct work_struct *cp_crash_wq)
 {
+	int ret;
 	unsigned char data;
+	struct timespec ts;
+	struct rtc_time tm;
 
 	char* argv[] = {"/system/bin/ifx_coredump", "CP_CRASH_IRQ", NULL};
 	char *envp[] = { "HOME=/",	"PATH=/sbin:/bin:/system/bin",	NULL };	
 
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+
 	printk(KERN_INFO "[CP CRASH IRQ] CP_CRASH_wq_func()\n");	
+	printk(KERN_INFO "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);	
+	
+	if(gpio_get_value(CP_CRASH_INT_N))
+	{
+		lge_store_ciq_reset(0, LGE_NVDATA_IQ_RESET_EXCEPTION);
+		
+		// UPDATE CP_CRASH_COUNT 
+		lge_dynamic_nvdata_read(LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET, &data, 1);
+		data++;
+		lge_dynamic_nvdata_write(LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET, &data, 1);
 
-	lge_dynamic_nvdata_read(LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET, &data, 1);
-	data++;
-	lge_dynamic_nvdata_write(LGE_NVDATA_DYNAMIC_CP_CRASH_COUNT_OFFSET, &data, 1);
+		// CHECK CP_CRASH_DUMP OPTION
+		if (lge_is_crash_dump_enabled() != 1)
+		{	
+#ifndef ENABLE_CP_CRASH_RESET	// LGE_RIL_RECOVERY
+			printk(" CP CRASH! immediate RIL/CP reset");
+			input_report_key(in_dev, EVENT_KEY, 1);
+			input_report_key(in_dev, EVENT_KEY, 0);
+			input_sync(in_dev);
+			printk("[CPW] input_report_key(): %d\n", EVENT_KEY);
+#endif
+			return;
+		}
 
-	if (lge_is_crash_dump_enabled() != 1)
-	{	
-#ifndef ENABLE_CP_CRASH_RESET
+		/* Stop MIPI HSI driver to get CP core dump */
+		hsi_ll_reset(HSI_LL_RESET_IFX_COREDUMP);
+
+		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
+
+		printk(KERN_INFO "[CP CRASH IRQ] launch ifx_coredump process ret:%d\n", ret);
+
+		gpio_set_value(82, 1);
+	}
+	else
+	{
+#if 1	
+		/*****************************************************************************
+			1. Case of HSI_LL_MSG_BREAK in hsi_ll_port_event_cb
+		*****************************************************************************/
+		printk(KERN_INFO "[CP CRASH IRQ] CP_CRASH_wq_func() - CP_CRASH_INT_N - Invaild\n");
+
+#ifndef ENABLE_CP_CRASH_RESET	// LGE_RIL_RECOVERY
 		printk(" CP CRASH! immediate RIL/CP reset");
 		input_report_key(in_dev, EVENT_KEY, 1);
 		input_report_key(in_dev, EVENT_KEY, 0);
 		input_sync(in_dev);
 		printk("[CPW] input_report_key(): %d\n", EVENT_KEY);
 #endif
-		return;
+#endif		
 	}
-
-	call_usermodehelper(argv[0], argv, envp, UMH_NO_WAIT);
-
-	gpio_set_value(82, 1);
-
 }
 
+void ifx_schedule_cp_dump_or_reset(void)
+{
+	/* Make the interrupt on CP CRASH INT wake up OMAP which is in suspend mode */
+	schedule_delayed_work( &cp_crash_int_delayed_wq, msecs_to_jiffies(500));
+}
 
 static irqreturn_t CP_CRASH_interrupt_handler(s32 irq, void *data)
 {
-	/* Make the interrupt on CP CRASH INT wake up OMAP which is in suspend mode */
-	schedule_work(&CP_CRASH_INT_wq);
+	ifx_schedule_cp_dump_or_reset();
 	return IRQ_HANDLED;
 }
-
 

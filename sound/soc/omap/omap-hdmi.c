@@ -88,6 +88,7 @@ static void hdmi_pwrchange_notifier(int state, void *data)
 	case HDMI_EVENT_POWEROFF:
 		if (substream) {
 			snd_pcm_stop(substream, SNDRV_PCM_STATE_DISCONNECTED);
+			//hdmi_set_audio_power(0);
 		}
 		hdmi_data->active = 0;
 		break;
@@ -110,6 +111,102 @@ static void hdmi_pwrchange_notifier(int state, void *data)
 	}
 }
 #endif
+
+//In TI's implementation
+//Sound module can turn on/off HDMI.
+//But HDMI's status is determined by plug-status, so turn on/off is unreasonable
+
+#if 0
+static int omap_hdmi_dai_startup(struct snd_pcm_substream *substream,
+				  struct snd_soc_dai *dai)
+{
+	int err = 0;
+#ifdef CONFIG_HDMI_NO_IP_MODULE
+	if (!hdmi_data.active) {
+		printk(KERN_ERR "hdmi device not available\n");
+		return -ENODEV;
+	}
+
+	hdmi_set_audio_power(1);
+	hdmi_data.substream = substream;
+	err = hdmi_w1_wrapper_enable(HDMI_WP);
+#else
+	if (hdmi_audio_core.module_loaded)
+		err = hdmi_audio_core.wrapper_enable(HDMI_WP);
+	else
+		printk(KERN_WARNING "Warning: hdmi_core.ko is not enabled");
+#endif
+	return err;
+}
+
+static void omap_hdmi_dai_shutdown(struct snd_pcm_substream *substream,
+				    struct snd_soc_dai *dai)
+{
+#ifdef CONFIG_HDMI_NO_IP_MODULE
+	hdmi_w1_wrapper_disable(HDMI_WP);
+	hdmi_data.substream = NULL;
+	if (hdmi_data.active)
+	hdmi_set_audio_power(0);
+
+#ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+	if (hdmi_lib_stop_acr_wa())
+		printk(KERN_WARNING "HDMI WA may be in bad state");
+#endif
+#else
+	if (hdmi_audio_core.module_loaded)
+		hdmi_audio_core.wrapper_disable(HDMI_WP);
+	else
+		printk(KERN_WARNING "Warning: hdmi_core.ko is not enabled");
+#endif
+	return;
+}
+
+static int omap_hdmi_dai_trigger(struct snd_pcm_substream *substream, int cmd,
+				  struct snd_soc_dai *dai)
+{
+	int err = 0;
+
+	switch (cmd) {
+	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_RESUME:
+	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+#ifdef CONFIG_HDMI_NO_IP_MODULE
+		if (cmd == SNDRV_PCM_TRIGGER_RESUME)
+			hdmi_set_audio_power(1);
+		err = hdmi_w1_start_audio_transfer(HDMI_WP);
+#else
+		if (hdmi_audio_core.module_loaded)
+			err = hdmi_audio_core.start_audio(HDMI_WP);
+		else
+			printk(KERN_WARNING "Warning: hdmi_core.ko is "
+							"not enabled");
+#endif
+		break;
+
+	case SNDRV_PCM_TRIGGER_STOP:
+	case SNDRV_PCM_TRIGGER_SUSPEND:
+	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+#ifdef CONFIG_HDMI_NO_IP_MODULE
+		err = hdmi_w1_stop_audio_transfer(HDMI_WP);
+		if (err)
+			return err;
+		if (cmd == SNDRV_PCM_TRIGGER_SUSPEND)
+			hdmi_set_audio_power(0);
+#else
+		if (hdmi_audio_core.module_loaded)
+			err = hdmi_audio_core.stop_audio(HDMI_WP);
+		else
+			printk(KERN_WARNING "Warning: hdmi_core.ko is "
+							"not enabled");
+#endif
+		break;
+	default:
+		err = -EINVAL;
+	}
+
+	return err;
+}
+#else
 
 #ifndef CONFIG_HDMI_NO_IP_MODULE
 #error Only Suport NO IP MODULE
@@ -134,6 +231,13 @@ static void omap_hdmi_dai_shutdown(struct snd_pcm_substream *substream,
 {
 	hdmi_w1_wrapper_disable(HDMI_WP);
 	hdmi_data.substream = NULL;
+
+#if 0
+#ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+	if (hdmi_lib_stop_acr_wa())
+		printk(KERN_WARNING "HDMI WA may be in bad state");
+#endif
+#endif
 
 	return;
 }
@@ -168,6 +272,7 @@ static int omap_hdmi_dai_trigger(struct snd_pcm_substream *substream, int cmd,
 	return err;
 }
 
+#endif
 
 static int omap_hdmi_dai_hw_params(struct snd_pcm_substream *substream,
 				    struct snd_pcm_hw_params *params,
@@ -199,6 +304,15 @@ static int omap_hdmi_dai_hw_params(struct snd_pcm_substream *substream,
 	snd_soc_dai_set_dma_data(dai, substream,
 				 &omap_hdmi_dai_dma_params);
 
+#if	0
+#ifdef CONFIG_OMAP_HDMI_AUDIO_WA
+	err = hdmi_lib_start_acr_wa();
+	if (err)
+		printk(KERN_ERR "Failed to start ACR workaround[%d]]\n", err);
+#endif
+#endif
+
+
 	return err;
 }
 
@@ -223,6 +337,12 @@ static struct snd_soc_dai_driver omap_hdmi_dai = {
 static __devinit int omap_hdmi_probe(struct platform_device *pdev)
 {
 	struct hdmi_notifier *notifier = &hdmi_data.notifier;
+//	notifier->hpd_notifier = hdmi_hpd_notifier;
+//	notifier->pwrchange_notifier = hdmi_pwrchange_notifier;
+//	notifier->private_data = &hdmi_data;
+//	hdmi_lib_init();
+//	hdmi_add_notifier(notifier);
+
 	return snd_soc_register_dai(&pdev->dev, &omap_hdmi_dai);
 }
 

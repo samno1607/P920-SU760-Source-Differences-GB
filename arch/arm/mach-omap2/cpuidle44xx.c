@@ -25,14 +25,12 @@
 
 #ifdef CONFIG_CPU_IDLE
 
-
 //#define DEBUG_CPUIDLE
 #ifdef DEBUG_CPUIDLE
 static int n_print_count=0;
 static int old_c_status=0;
 static char old_c_name[CPUIDLE_NAME_LEN]= {0,};
 #endif // DEBUG_CPUIDLE
-
 
 #define OMAP4_MAX_STATES	4
 
@@ -154,7 +152,6 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	if (cx->type > OMAP4_STATE_C1)
 		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &cpu_id);
 
-
 #ifdef DEBUG_CPUIDLE
 	if ((old_c_status != cx->type) || strcmp(old_c_name, state->name) != 0)
 	{
@@ -165,7 +162,6 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	old_c_status = cx->type;
 	strcpy(old_c_name, state->name);
 #endif
-
 
 #ifdef CONFIG_PM_DEBUG
 	pwrdm_pre_transition();
@@ -272,7 +268,6 @@ void omap_init_power_states(void)
 		CPUIDLE_FLAG_CHECK_BM;
 	omap4_power_states[OMAP4_STATE_C2].desc = "MPU INA + CORE INA";
 
-	
 	//omap4_power_states[OMAP4_STATE_C2].core_state = PWRDM_POWER_ON;
 	
 	/*
@@ -297,7 +292,6 @@ void omap_init_power_states(void)
 		CPUIDLE_FLAG_CHECK_BM;
 	omap4_power_states[OMAP4_STATE_C3].desc = "MPU CSWR + CORE OSWR";
 
-	
 	//omap4_power_states[OMAP4_STATE_C3].core_state = PWRDM_POWER_ON;
 	//omap4_power_states[OMAP4_STATE_C3].core_logic_state = PWRDM_POWER_RET;
 
@@ -323,7 +317,9 @@ void omap_init_power_states(void)
 		CPUIDLE_FLAG_CHECK_BM;
 	omap4_power_states[OMAP4_STATE_C4].desc = "MPU OSWR + CORE OSWR";
 
-
+	//omap4_power_states[OMAP4_STATE_C4].core_state = PWRDM_POWER_ON;
+	//omap4_power_states[OMAP4_STATE_C4].core_logic_state = PWRDM_POWER_RET;	
+	
 }
 
 struct cpuidle_driver omap4_idle_driver = {

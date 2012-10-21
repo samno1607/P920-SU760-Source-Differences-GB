@@ -141,7 +141,12 @@ static void omap4_hsmmc1_before_set_reg(struct device *dev, int slot,
 	 * FIXME handle VMMC1A as needed ...
 	 */
 	reg = omap4_ctrl_pad_readl(control_pbias_offset);
-#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
+#if 0	
+	reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
+		OMAP4_MMC1_PWRDNZ_MASK |
+		OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
+
+#elif defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
 reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
 	OMAP4_MMC1_PWRDNZ_MASK );
 
@@ -171,7 +176,13 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
 			reg &= ~OMAP4_MMC1_PBIASLITE_VMODE_MASK;
 		else
 			reg |= OMAP4_MMC1_PBIASLITE_VMODE_MASK;
+#if 0	
+		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
+			OMAP4_MMC1_PWRDNZ_MASK |
+			OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
+#else
 		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK | OMAP4_MMC1_PWRDNZ_MASK);
+#endif	 
 		omap4_ctrl_pad_writel(reg, control_pbias_offset);
 		/* 4 microsec delay for comparator to generate an error*/
 	#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
@@ -189,7 +200,12 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
 
 			
 			/* Caution : On VMODE_ERROR Power Down MMC IO */
+#if 0	
+			reg &= ~(OMAP4_MMC1_PWRDNZ_MASK |
+				OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
+#else
 			reg &= ~(OMAP4_MMC1_PWRDNZ_MASK);
+#endif	 
 			omap4_ctrl_pad_writel(reg, control_pbias_offset);
 		}
 	} else {
@@ -197,6 +213,12 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
 		extern int twl6030_mmc_no_card(void);
 	#endif	
 		reg = omap4_ctrl_pad_readl(control_pbias_offset);
+#if 0	
+		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
+			OMAP4_MMC1_PWRDNZ_MASK |
+			OMAP4_MMC1_PBIASLITE_VMODE_MASK |
+			OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
+#else
   #if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)|| defined(CONFIG_MACH_LGE_MMC_ALWAYSON)
 
 		reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
@@ -206,7 +228,8 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
   #else
 		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
 			OMAP4_MMC1_PWRDNZ_MASK | OMAP4_MMC1_PBIASLITE_VMODE_MASK);
-  #endif	
+  #endif		//CONFIG_MACH_LGE_VMMC_AUTO_OFF	
+#endif	 
 		omap4_ctrl_pad_writel(reg, control_pbias_offset);
 	#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)
 		udelay(400);
@@ -307,7 +330,7 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 	}
 
 
-#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)|| defined(CONFIG_MACH_LGE_MMC_ALWAYSON)
+#if defined (CONFIG_MACH_LGE_VMMC_AUTO_OFF)|| defined(CONFIG_MACH_LGE_MMC_ALWAYSON)	
 
 {
 
@@ -320,7 +343,7 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 
 }
 
-#endif	
+#endif	//CONFIG_MACH_LGE_VMMC_AUTO_OFF	
 
 	for (c = controllers; c->mmc; c++) {
 		struct hsmmc_controller *hc = hsmmc + controller_cnt;
@@ -465,6 +488,7 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 			break;
 		case 4:
 		case 5:
+//			mmc->get_context_loss_count = hsmmc_get_context_loss;
 			/* TODO Update required */
 			mmc->slots[0].before_set_reg = NULL;
 			mmc->slots[0].after_set_reg = NULL;

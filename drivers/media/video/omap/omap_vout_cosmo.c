@@ -164,7 +164,9 @@ module_param(debug, bool, S_IRUGO);
 MODULE_PARM_DESC(debug, "Debug level (0-1)");
 
 
+#if 1 /* baeyoung.park 2011-02-17 */
 extern bool IsVideoTelephonyActivated(void);
+#endif
 
 static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i);
 
@@ -351,6 +353,12 @@ static void omap_vout_tiler_buffer_free(struct omap_vout_device *vout,
 		count = VIDEO_MAX_FRAME - startindex;
 
 	for (i = startindex; i < startindex + count; i++) {
+//		printk("Tiler Free (%d) phy_addr(0x%08lx) phy_addr(0x%08lx) uv_addr(0x%08lx) uv_addr_alloc(0x%08lx)\n",
+//			i,
+//			vout->buf_info.buf_phy_addr[i],
+//			vout->buf_info.buf_phy_addr_alloced[i],
+//			vout->buf_info.buf_phy_uv_addr[i],
+//			vout->buf_info.buf_phy_uv_addr_alloced[i]);
 		if (vout->buf_info.buf_phy_addr_alloced[i])
 			tiler_free(vout->buf_info.buf_phy_addr_alloced[i]);
 		if (vout->buf_info.buf_phy_uv_addr_alloced[i])
@@ -435,6 +443,12 @@ static int omap_vout_tiler_buffer_setup(struct omap_vout_device *vout,
 				vout->buf_info.buf_phy_addr_alloced[i] ? 1 : 0,
 				vout->buf_info.buf_phy_uv_addr[i],
 				vout->buf_info.buf_phy_uv_addr_alloced[i] ? 1 : 0);
+//		printk("Tiler Setup (%d) phy_addr(0x%08lx) phy_addr(0x%08lx) uv_addr(0x%08lx) uv_addr_alloc(0x%08lx)\n",
+//			i,
+//			vout->buf_info.buf_phy_addr[i],
+//			vout->buf_info.buf_phy_addr_alloced[i],
+//			vout->buf_info.buf_phy_uv_addr[i],
+//			vout->buf_info.buf_phy_uv_addr_alloced[i]);
 		
 	}
 
@@ -570,6 +584,24 @@ static enum omap_dss_overlay_s3d_type v4l2_s3d_to_dss_s3d_type(enum v4l2_frame_p
 	}
 }
 
+/**
+ * convert dss s3d type to v4l2 s3d type
+ */
+//static enum v4l2_frame_pack_type dss_s3d_to_v4l2_s3d_type(enum omap_dss_overlay_s3d_type type)
+//{
+//	switch (type )
+//	{
+//	case omap_dss_overlay_s3d_top_bottom:
+//		return V4L2_FPACK_OVERUNDER;
+//	case omap_dss_overlay_s3d_side_by_side:
+//		return V4L2_FPACK_SIDEBYSIDE;
+//	case omap_dss_overlay_s3d_interlaced:
+//		return V4L2_FPACK_COL_IL;
+//	default :
+//		return V4L2_FPACK_NONE;
+//	}
+//
+//}
 
 /**
  * Get address at (x,y) in tiler memory
@@ -621,6 +653,10 @@ static int omap_vout_get_offset_tiler(enum omap_color_mode color,
 	}
 	else
 		addr_offset = tiler_stride(paddr) * y + x * ps;
+//	DBG_PRINTK("Caculate tiler offset paddr:0x%x, uv_addr:0x%x, (%d,%d) paddr_offset:%d, uv_ofset:%d\n",
+//			paddr, uv_addr,
+//			x, y,
+//			addr_offset, uv_offset);
 	if ( paddr_ret )
 		*paddr_ret = paddr + addr_offset;
 	if ( uv_addr_ret )
@@ -814,6 +850,7 @@ static int omap_vout_display_set_alpha_and_trans(struct omap_vout_device *vout, 
 
 	if ( info_changed )
 	{
+//		DBG_PRINTK
 		printk("VOUT Trans & Alpha value changed alpah enalbed(%d), trans_enabled(%d), trans_type(%d), transk_color(%u)\n",
 				info.alpha_enabled, info.trans_enabled, info.trans_key_type, info.trans_key);
 		mgr->set_manager_info(mgr, &info);
@@ -1076,7 +1113,10 @@ static int omap_vout_display_to_overlay_2d(struct omap_overlay *ovl, struct vide
 		ovlInfo.height	= fInfo->crop.height;
 		ovlInfo.screen_width = fInfo->pix.width;
 	}
-	ovlInfo.mirror	= 0;
+// TI_PATCH_S to support mirroring in Froyo 2011-06-28	
+    // mirror flag is used for mirror effect of front camera
+	//ovlInfo.mirror	= 0;
+// TI_PATCH_E to support mirroring in Froyo 2011-06-28	
 	ovlInfo.pos_x	= pos_x;
 	ovlInfo.pos_y	= pos_y;
 
@@ -1538,6 +1578,17 @@ static int omap_vout_display_lcd_top_bottom_to_interlace(struct omap_vout_device
 		return -EINVAL;
 	}
 
+	//configure wb
+	//    numric=>Left, Alphabet=>Right
+	//	(TB)  => rotate 90 in double width => in org width
+	//   0123    EA40                          EA
+	//   4567 => FB51                          40
+	//   ABCD    GC61                          FB
+	//   EFGH    HD73                          51
+	//                                         GC
+	//                                         61
+	//                                         HD
+	//                                         73
 
 	r = omap_vout_display_lcd_wb(frame,
 			wb,
@@ -2195,6 +2246,13 @@ static void omap_vout_display(struct work_struct *work)
 			return;
 		}
 
+    if( !vout->display_info.lcd.win.w.width ) //taekeun1.kim change
+    {
+      curFrame->state = VIDEOBUF_DONE;
+      wake_up(&curFrame->done);
+      return;
+    }
+
 		//streaming check
 		mutex_lock(&vout->lock);
 		streaming_status = vout->streaming_status;
@@ -2258,7 +2316,6 @@ static void omap_vout_display(struct work_struct *work)
 
 		mutex_unlock(&vout->in_display_operation);
 
-		
 		if(vout->queing_info.displaying_frame == curFrame)
 			return;
 		
@@ -2524,6 +2581,15 @@ static int omap_vout_mmap(struct file *file, struct vm_area_struct *vma)
 
 	for (j = 0; j < vout->input_info.pix.height; j++) {
 		/* map each page of the line */
+	#if 0
+		if (0)
+			printk(KERN_NOTICE
+				"Y buffer %s::%s():%d: vm_start+%d = 0x%lx,"
+				"dma->vmalloc+%d = 0x%lx, w=0x%x\n",
+				__FILE__, __func__, __LINE__,
+				k, vma->vm_start + k, m,
+				(pos + m), p);
+	#endif
 		vma->vm_pgoff =
 			((unsigned long)pos + m) >> PAGE_SHIFT;
 
@@ -2545,6 +2611,15 @@ static int omap_vout_mmap(struct file *file, struct vm_area_struct *vma)
 		/* UV buffer is height / 2*/
 		for (j = 0; j < vout->input_info.pix.height / 2; j++) {
 			/* map each page of the line */
+		#if 0
+			if (0)
+				printk(KERN_NOTICE
+				"UV buffer %s::%s():%d: vm_start+%d = 0x%lx,"
+				"dma->vmalloc+%d = 0x%lx, w=0x%x\n",
+				__FILE__, __func__, __LINE__,
+				k, vma->vm_start + k, m,
+				(pos + m), p);
+		#endif
 			vma->vm_pgoff =
 				((unsigned long)pos + m) >> PAGE_SHIFT;
 
@@ -2946,7 +3021,7 @@ static int vidioc_g_fmt_type_private(struct file *file, void *fh,
 {
 	struct omap_vout_device *vout = fh;
 	struct v4l2_window *win = &f->fmt.win;
-	struct v4l2_window *hdmi_win = &vout->display_info.lcd.win;
+	struct v4l2_window *hdmi_win = &vout->display_info.hdmi.win;
 
 	printk("vidioc_g_fmt_type_private\n");
 	mutex_lock(&vout->lock);
@@ -3062,6 +3137,11 @@ static int vidioc_queryctrl(struct file *file, void *fh,
 	case V4L2_CID_ROTATE:
 		ret = v4l2_ctrl_query_fill(ctrl, 0, 270, 90, 0);
 		break;
+// TI_PATCH_S to support mirroring in Froyo 2011-06-28	
+    case V4L2_CID_VFLIP:
+		ret = v4l2_ctrl_query_fill(ctrl, 0, 1, 1, 0);
+		break;
+// TI_PATCH_E to support mirroring in Froyo 2011-06-28	
 	case V4L2_CID_TI_DISPC_OVERLAY:
 		/* not settable for now */
 		//only lcd
@@ -3087,6 +3167,22 @@ static int vidioc_g_ctrl(struct file *file, void *fh, struct v4l2_control *ctrl)
 	case V4L2_CID_ROTATE:
 		dss_rot_to_v4l2_rot( vout->display_info.lcd.rotation, &ctrl->value);
 		break;
+// TI_PATCH_S to support mirroring in Froyo 2011-06-28	
+    	case V4L2_CID_VFLIP:
+    {
+        	struct omap_overlay *ovl;
+		struct omapvideo_info *ovid;
+		
+		ovid = &vout->vid_info;
+		ovl = ovid->overlays.overlays[0];
+
+		mutex_lock(&vout->lock);
+        	ctrl->value  = ovl->info.mirror;
+		mutex_unlock(&vout->lock);
+		break;
+    }
+// TI_PATCH_E to support mirroring in Froyo 2011-06-28	
+    // Edgar --    
 	case V4L2_CID_TI_DISPC_OVERLAY:
 		ctrl->value = vout->vid_info.overlays.named.lcd->id;
 		break;
@@ -3130,7 +3226,19 @@ static int vidioc_s_ctrl(struct file *file, void *fh, struct v4l2_control *a)
 	{
 		int rotation = a->value;
 
-   
+//		if (1 == IsVideoTelephonyActivated()) /* baeyoung.park 2011-02-17 */
+//		{
+//20110217 wootaek.lim Rotation For Domestic Cosmo VT START
+//#if defined(CONFIG_MACH_LGE_COSMO_DOMASTIC)
+//			DBG_PRINTK("##########VT Domestic Rotation##########");
+//			rotation = 270;
+//#else
+//			DBG_PRINTK("##########VT Global Rotation##########");
+//			rotation = 90;	
+			//printk("VT activated !!!!!!!!!!\n");
+//#endif
+//20110217 wootaek.lim Rotation For Domestic Cosmo VT END
+//		}        
 
 		mutex_lock(&vout->lock);
 
@@ -3145,6 +3253,22 @@ static int vidioc_s_ctrl(struct file *file, void *fh, struct v4l2_control *a)
 
 		break;
 	}
+// TI_PATCH_S to support mirroring in Froyo 2011-06-28	
+    case V4L2_CID_VFLIP:
+	{
+		struct omap_overlay *ovl;
+		struct omapvideo_info *ovid;
+		unsigned int  mirror = a->value;
+
+		ovid = &vout->vid_info;
+		ovl = ovid->overlays.overlays[0];
+
+		mutex_lock(&vout->lock);
+		ovl->info.mirror = mirror;
+		mutex_unlock(&vout->lock);
+		break;
+	}
+// TI_PATCH_E to support mirroring in Froyo 2011-06-28
 	case ( V4L2_CID_PRIVATE_BASE + 'H'*0x100 + 'e' ) :	//HDMI enable flag
 		mutex_lock(&vout->lock);
 		if ( vout->display_info.hdmi.enable && !a->value && vout->streaming_status==E_STREAMING_ON_GOING )
@@ -3296,7 +3420,6 @@ static int vidioc_qbuf(struct file *file, void *fh,
 	DBG_PRINTK("Buffer %d queue\n", buffer->index);
 	ret = videobuf_qbuf(q, buffer);
 
-	
 	if(ret != 0)
 		goto err;
 

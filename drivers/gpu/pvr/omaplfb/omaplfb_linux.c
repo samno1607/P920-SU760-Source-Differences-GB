@@ -63,7 +63,7 @@
 #endif
 #endif
 
-
+#define CONFIG_GFX_DMA_COPY
 #if defined(CONFIG_GFX_DMA_COPY) || defined(CONFIG_HDMI_DMA_COPY)
 #include <plat/dma.h>
 #include <linux/time.h>
@@ -73,10 +73,7 @@
 
 
 
-
-
 #include <mach/tiler.h>
-
 
 #include "img_defs.h"
 #include "servicesext.h"
@@ -84,14 +81,10 @@
 #include "omaplfb.h"
 #include "pvrmodule.h"
 
-
 #include <plat/vram.h>
 MODULE_SUPPORTED_DEVICE(DEVNAME);
 
-
 extern struct omap_overlay_info omap_overlay_info_req[4];
-
-
 
 #ifdef CONFIG_GFX_DMA_COPY
 static struct {
@@ -99,8 +92,6 @@ static struct {
 	int lch;
 } gfx_dma[2];
 #endif
-
-
 
 #ifdef CONFIG_HDMI_DMA_COPY 
 #define HDMI_DMA_MAX	3
@@ -131,7 +122,6 @@ static struct hdmi_dma_type hdmi_dma;
 int hdmi_frame_num;
 #endif
 
-
 #if defined(CONFIG_OUTER_CACHE)  /* Kernel config option */
 #if defined(__arm__)
 static void per_cpu_cache_flush_arm(void *arg)
@@ -141,7 +131,6 @@ static void per_cpu_cache_flush_arm(void *arg)
 }
 #endif
 #endif
-
 
 #ifdef CONFIG_GFX_DMA_COPY 
 static void _omap_gfx_dma_cb_even(int lch, u16 ch_status, void *data)
@@ -156,8 +145,6 @@ static void _omap_gfx_dma_cb_odd(int lch, u16 ch_status, void *data)
         complete(compl);
 }
 #endif
-
-
 
 #ifdef CONFIG_HDMI_DMA_COPY 
 static void _omap_hdmi_dma_cb(int lch, u16 ch_status, void *data)
@@ -202,7 +189,6 @@ static void hdmi_display_worker(struct work_struct *work)
 }
 
 #endif
-
 
 /*
  * Kernel malloc
@@ -290,8 +276,6 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 }
 
 #elif defined(FLIP_TECHNIQUE_OVERLAY)
-
-//Temp code
 
 #define INTERLEAVE_BUFFER_NUM	2
 
@@ -403,12 +387,59 @@ static void makeinterlave(struct fb_info *fbi, struct omapfb_info *ofbi, struct 
 	if ( IB!=NULL )
 	{
 #ifdef CONFIG_GFX_DMA_COPY
+		omap_stop_dma(gfx_dma[0].lch);
+		omap_set_dma_transfer_params(gfx_dma[0].lch, OMAP_DMA_DATA_TYPE_S32,
+			(fbi->fix.line_length>>2), (fbi->var.yres)>>1, 0, 0, 0);
+		omap_set_dma_src_params(gfx_dma[0].lch, 0, OMAP_DMA_AMODE_POST_INC,
+			overlay_info.paddr, 1, 1);
+		omap_set_dma_dest_params(gfx_dma[0].lch, 0, OMAP_DMA_AMODE_DOUBLE_IDX,
+			IB->paddr + fbi->fix.line_length, 1, (fbi->fix.line_length) + 1);
 
+  #if 1//test
+    omap_set_dma_src_burst_mode(gfx_dma[0].lch, OMAP_DMA_DATA_BURST_16);
+    omap_set_dma_src_data_pack(gfx_dma[0].lch, 1);
+    omap_set_dma_dest_burst_mode(gfx_dma[0].lch, OMAP_DMA_DATA_BURST_16);
+    omap_set_dma_dest_data_pack(gfx_dma[0].lch, 1);
+  #else
+		omap_set_dma_src_data_pack(gfx_dma[0].lch, 1);
+		omap_set_dma_dest_data_pack(gfx_dma[0].lch, 1);
+  #endif
+		
+		omap_start_dma(gfx_dma[0].lch);
 
+		{
+			//copy interleave
+			int stride;
+			int height;
+			unsigned char *src, *dst;
+			int i;
+
+			stride = fbi->fix.line_length;
+			height = fbi->var.yres;
+			src = overlay_info.vaddr + (stride*(height>>1));
+			dst = IB->buffer;
+			for(i=0; i<(height>>1); i++)
+			{
+				//right frame copy to even line
+				unsigned char *even_line;
+				even_line = dst + 2*stride*i;
+				memcpy(even_line, src, stride);
+				src += stride;
+			}
+		}
+
+#if 0
 		if (wait_for_completion_timeout(&gfx_dma[0].compl, msecs_to_jiffies(1000)) == 0) {
 			omap_stop_dma(gfx_dma[0].lch);
 			DEBUG_PRINTK("GFX DMA: dma timeout while transferring\n");
 		}
+
+		if (wait_for_completion_timeout(&gfx_dma[1].compl, msecs_to_jiffies(1000)) == 0) {
+			omap_stop_dma(gfx_dma[1].lch);
+			DEBUG_PRINTK("GFX DMA: dma timeout while transferring\n");
+		}
+
+		omap_stop_dma(gfx_dma[0].lch);
 
 		omap_set_dma_transfer_params(gfx_dma[0].lch, OMAP_DMA_DATA_TYPE_S32,
 			(fbi->fix.line_length>>2), (fbi->var.yres)>>1, 0, 0, 0);
@@ -417,10 +448,25 @@ static void makeinterlave(struct fb_info *fbi, struct omapfb_info *ofbi, struct 
 		omap_set_dma_dest_params(gfx_dma[0].lch, 0, OMAP_DMA_AMODE_DOUBLE_IDX,
 			IB->paddr + fbi->fix.line_length, 1, (fbi->fix.line_length) + 1);
 
-		omap_start_dma(gfx_dma[0].lch);
+		omap_set_dma_transfer_params(gfx_dma[1].lch, OMAP_DMA_DATA_TYPE_S32,
+			(fbi->fix.line_length>>2), (fbi->var.yres)>>1, 0, 0, 0);
+		omap_set_dma_src_params(gfx_dma[1].lch, 0, OMAP_DMA_AMODE_POST_INC,
+			overlay_info.paddr + (fbi->fix.line_length * (fbi->var.yres>>1)), 1, 1);
+		omap_set_dma_dest_params(gfx_dma[1].lch, 0, OMAP_DMA_AMODE_DOUBLE_IDX,
+			IB->paddr, 1, (fbi->fix.line_length) + 1);
+			
+		omap_set_dma_src_data_pack(gfx_dma[0].lch, 1);
+		omap_set_dma_dest_data_pack(gfx_dma[0].lch, 1);
+		
+		omap_set_dma_src_data_pack(gfx_dma[1].lch, 1);
+		omap_set_dma_dest_data_pack(gfx_dma[1].lch, 1);
 
+		omap_start_dma(gfx_dma[0].lch);
+		omap_start_dma(gfx_dma[1].lch);
+#endif
 
 #else
+//			memcpy(IB->buffer, overlay_info.vaddr, IB->size);
 		{
 			//copy interleave
 			int stride;
@@ -432,6 +478,8 @@ static void makeinterlave(struct fb_info *fbi, struct omapfb_info *ofbi, struct 
 			height = fbi->var.yres;
 			src = overlay_info.vaddr;
 			dst = IB->buffer;
+//				printk("Interleave Copy line %d address:%p\n", height, IB->buffer);
+//				printk("overlay->roation_type : %d\n", overlay_info.rotation_type);
 			for(i=0;i<height;i++)
 			{
 				if ( i < (height/2) )
@@ -452,14 +500,20 @@ static void makeinterlave(struct fb_info *fbi, struct omapfb_info *ofbi, struct 
 			}
 		}
 #endif
+//			flush_cache_all();
 		overlay_info.paddr = IB->paddr;
 		overlay_info.vaddr = IB->buffer;
+//			printk("S3D : set oerlay paddr:0x%x vaddr 0x%x",
+//					overlay_info.paddr,
+//					overlay_info.vaddr );
+//			if ( cacheflush(IB->buffer, IB->size, DCACHE ) )
+//				printk("Interleave buffer flush failed\n");
+//			overlay->set_overlay_info(overlay, &overlay_info);
+//			return;
 	}
 	overlay_info.s3d_type = omap_dss_overlay_s3d_interlaced;
 	overlay->set_overlay_info(overlay, &overlay_info);
 }
-
-
 
 /**
  * Alloc Tiler Buffer for HDMI
@@ -536,14 +590,41 @@ int AllocTilerForHdmi(OMAPLFB_SWAPCHAIN *psSwapChain, OMAPLFB_DEVINFO *psDevInfo
 			psSwapChain->stHdmiTiler.vStride,
 			h);
 
+//	{
+//		//initial setup overlay info
+//		struct omap_overlay	*overlay;
+//		struct omap_overlay_info info;
+//		overlay = psSwapChain->stHdmiTiler.overlay;
+//		overlay->get_overlay_info(overlay, &info);
+//
+//		info.color_mode = OMAP_DSS_COLOR_ARGB32;
+//		info.rotation_type = OMAP_DSS_ROT_TILER;
+//
+//		info.paddr = psSwapChain->stHdmiTiler.pAddr;
+//		info.vaddr = NULL;
+//
+//		info.rotation = 0;
+//
+//		info.width = psDevInfo->sFBInfo.ulWidth;
+//		info.height = psDevInfo->sFBInfo.ulHeight;
+//
+//		info.pos_x = 0;
+//		info.pos_y = 0;
+//		info.out_width = info.width;
+//		info.out_height = info.height;
+//
+//		if ( overlay->set_overlay_info(overlay, &info) )
+//		{
+//			ERROR_PRINTK("Initial overlay1 setup failed\n");
+//			return;
+//		}
+//	}
 
 	return 0;
 }
 
-
 extern int hdmi_video_prepare_change(void *id, int layer_count, bool add_or_change, char *reason);
 extern int hdmi_video_commit_change(void *id);
-
 
 void FreeTilerForHdmi(OMAPLFB_SWAPCHAIN *psSwapChain)
 {
@@ -587,8 +668,6 @@ void FreeTilerForHdmi(OMAPLFB_SWAPCHAIN *psSwapChain)
 	}
 	psSwapChain->stHdmiTiler.alloc = false;
 }
-
-
 
 
 #ifdef CONFIG_HDMI_DMA_COPY
@@ -637,10 +716,12 @@ static void OMAPLFBFliepNoLock_HDMI(OMAPLFB_SWAPCHAIN *psSwapChain,
 		mutex_lock(&psSwapChain->stHdmiTiler.lock);
 		if ( !psSwapChain->stHdmiTiler.alloc )
 		{
+//			if ( AllocTilerForHdmi(psSwapChain, psDevInfo) ) {
 
 				ERROR_PRINTK("Tiler memory for HDMI GUI cloning is not allocated\n");
 				mutex_unlock(&psSwapChain->stHdmiTiler.lock);
 				return;
+//			}
 		}
 
 		if ( psSwapChain->stHdmiTiler.alloc )	//if Tiler memory is allocated
@@ -938,7 +1019,10 @@ static void OMAPLFBFliepNoLock_HDMI(OMAPLFB_SWAPCHAIN *psSwapChain,
 #endif
 
 
-
+#ifndef NATTING_TEST// temp until bug fixed
+int originFB_paddr;
+int originFB_vaddr;
+#endif
 
  /*
   * Presents the flip in the display with the DSS2 overlay API
@@ -952,7 +1036,6 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 	struct omapfb_info *ofbi = FB2OFB(framebuffer);
 	unsigned long fb_offset;
 	int i;
-
 
 	fb_offset = aPhyAddr - psDevInfo->sSystemBuffer.sSysAddr.uiAddr;
 
@@ -970,16 +1053,21 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 
 		overlay_info.paddr = framebuffer->fix.smem_start + fb_offset;
 		overlay_info.vaddr = framebuffer->screen_base + fb_offset;
-		
 		if ( i==0 ) {
 			overlay_info.s3d_type = psSwapChain->s3d_type;
 			if ( overlay_info.s3d_type==omap_dss_overlay_s3d_side_by_side )
+      {   
+      // temp until bug fixed
+      #ifndef NATTING_TEST//backup fb buffer address to rollback at fb suspend
+        originFB_paddr = overlay_info.paddr;
+        originFB_vaddr = overlay_info.vaddr;
+      #endif
 				makeinterlave(framebuffer, ofbi, overlay, &overlay_info);
+      }
 			else
 				overlay->set_overlay_info(overlay, &overlay_info);
 		} else
 			overlay->set_overlay_info(overlay, &overlay_info);
-		
 
 		if (manager) {
 			display = manager->device;
@@ -1001,10 +1089,9 @@ static void OMAPLFBFlipNoLock(OMAPLFB_SWAPCHAIN *psSwapChain,
 							overlay_info.height);
 
 		}
+
 	}
-	
 	OMAPLFBFliepNoLock_HDMI(psSwapChain, psDevInfo, ofbi, framebuffer, fb_offset);
-	
 }
 
 #else
@@ -1064,12 +1151,10 @@ void OMAPLFBPresentSync(OMAPLFB_DEVINFO *psDevInfo,
 		 * Update the video pipelines registers then wait until the
 		 * frame is shown with a VSYNC
 		 */
-	
-		err = manager->wait_for_vsync(manager); 		
-		if(psFlipItem->bFlipped == OMAP_FALSE)
-			OMAPLFBFlipNoLock(psDevInfo->psSwapChain, (unsigned long)psFlipItem->sSysAddr->uiAddr); 				
-	
-	}            
+		OMAPLFBFlipNoLock(psDevInfo->psSwapChain,
+			(unsigned long)psFlipItem->sSysAddr->uiAddr);
+		err = manager->wait_for_vsync(manager);
+	}
 
 	if (err)
 		WARNING_PRINTK("Unable to sync with display %u!",
@@ -1081,6 +1166,44 @@ void OMAPLFBPresentSync(OMAPLFB_DEVINFO *psDevInfo,
 #if defined(LDM_PLATFORM)
 
 static volatile OMAP_BOOL bDeviceSuspended;
+
+static int omaplfb_probe(struct platform_device *pdev)
+{
+	struct omaplfb_device *odev;
+
+	odev = kzalloc(sizeof(*odev), GFP_KERNEL);
+
+	if (!odev)
+		return -ENOMEM;
+
+	if (OMAPLFBInit(odev) != OMAP_OK) {
+		dev_err(&pdev->dev, "failed to setup omaplfb\n");
+		kfree(odev);
+		return -ENODEV;
+	}
+
+	odev->dev = &pdev->dev;
+	platform_set_drvdata(pdev, odev);
+	omaplfb_create_sysfs(odev);
+
+	return 0;
+}
+
+static int omaplfb_remove(struct platform_device *pdev)
+{
+	struct omaplfb_device *odev;
+
+	odev = platform_get_drvdata(pdev);
+
+	omaplfb_remove_sysfs(odev);
+
+	if (OMAPLFBDeinit() != OMAP_OK)
+		WARNING_PRINTK("Driver cleanup failed");
+
+	kfree(odev);
+
+	return 0;
+}
 
 /*
  * Common suspend driver function
@@ -1098,9 +1221,27 @@ static void OMAPLFBCommonSuspend(void)
 	bDeviceSuspended = OMAP_TRUE;
 }
 
-#if defined(SGX_EARLYSUSPEND) && defined(CONFIG_HAS_EARLYSUSPEND)
+#if 0
+/*
+ * Function called when the driver is requested to release
+ * in: pDevice
+ */
+static void OMAPLFBDeviceRelease_Entry(struct device unref__ *pDevice)
+{
+	DEBUG_PRINTK("Requested driver release");
+	OMAPLFBCommonSuspend();
+}
 
-static struct early_suspend omaplfb_early_suspend;
+static struct platform_device omaplfb_device = {
+	.name = DEVNAME,
+	.id = -1,
+	.dev = {
+		.release = OMAPLFBDeviceRelease_Entry
+	}
+};
+#endif
+
+#if defined(SGX_EARLYSUSPEND) && defined(CONFIG_HAS_EARLYSUSPEND)
 
 /*
  * Android specific, driver is requested to be suspended
@@ -1126,7 +1267,16 @@ static void OMAPLFBDriverResume_Entry(struct early_suspend *ea_event)
 static struct platform_driver omaplfb_driver = {
 	.driver = {
 		.name = DRVNAME,
-	}
+		.owner  = THIS_MODULE,
+	},
+	.probe = omaplfb_probe,
+	.remove = omaplfb_remove,
+};
+
+static struct early_suspend omaplfb_early_suspend = {
+	.suspend = OMAPLFBDriverSuspend_Entry,
+	.resume = OMAPLFBDriverResume_Entry,
+	.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING,
 };
 
 #else /* defined(SGX_EARLYSUSPEND) && defined(CONFIG_HAS_EARLYSUSPEND) */
@@ -1169,7 +1319,10 @@ static IMG_VOID OMAPLFBDriverShutdown_Entry(
 static struct platform_driver omaplfb_driver = {
 	.driver = {
 		.name = DRVNAME,
+		.owner  = THIS_MODULE,
 	},
+	.probe = omaplfb_probe,
+	.remove = omaplfb_remove,
 	.suspend = OMAPLFBDriverSuspend_Entry,
 	.resume	= OMAPLFBDriverResume_Entry,
 	.shutdown = OMAPLFBDriverShutdown_Entry,
@@ -1185,27 +1338,25 @@ static struct platform_driver omaplfb_driver = {
 static int __init OMAPLFB_Init(void)
 {
 #if defined(CONFIG_GFX_DMA_COPY) || defined(CONFIG_HDMI_DMA_COPY)
-
 	int i, r;
 #endif
-	if(OMAPLFBInit() != OMAP_OK)
-	{
-		WARNING_PRINTK("Driver init failed");
-		return -ENODEV;
-	}
-
 #if defined(LDM_PLATFORM)
 	DEBUG_PRINTK("Registering platform driver");
 	if (platform_driver_register(&omaplfb_driver))
+		return -ENODEV;
+#if 0
+	DEBUG_PRINTK("Registering device driver");
+	if (platform_device_register(&omaplfb_device))
 	{
-		WARNING_PRINTK("Unable to register platform driver");
+		WARNING_PRINTK("Unable to register platform device");
+		platform_driver_unregister(&omaplfb_driver);
 		if(OMAPLFBDeinit() != OMAP_OK)
 			WARNING_PRINTK("Driver cleanup failed\n");
 		return -ENODEV;
 	}
+#endif
 
 #ifdef CONFIG_GFX_DMA_COPY
-
 	for(i=0; i<2; i++) init_completion(&gfx_dma[i].compl);
 	
 	r = omap_request_dma(OMAP_DMA_NO_DEVICE, "GFX DMA odd",
@@ -1224,11 +1375,9 @@ static int __init OMAPLFB_Init(void)
 		goto dma_request_end;
 	}
 dma_request_end:
-
 #endif
 
 #ifdef CONFIG_HDMI_DMA_COPY
-
 	init_completion(&hdmi_dma.compl);
 	hdmi_dma.state = HDMI_DMA_DONE;
 	hdmi_dma.frame_pos = 0;
@@ -1244,15 +1393,11 @@ dma_request_end:
 
 	hdmi_frame_num = 0;
 	INIT_WORK(&hdmi_dma_work, hdmi_display_worker);
-
 #endif
 
 
 #if defined(SGX_EARLYSUSPEND) && defined(CONFIG_HAS_EARLYSUSPEND)
-	omaplfb_early_suspend.suspend = OMAPLFBDriverSuspend_Entry;
-        omaplfb_early_suspend.resume = OMAPLFBDriverResume_Entry;
-        omaplfb_early_suspend.level = EARLY_SUSPEND_LEVEL_STOP_DRAWING;
-        register_early_suspend(&omaplfb_early_suspend);
+	register_early_suspend(&omaplfb_early_suspend);
 	DEBUG_PRINTK("Registered early suspend support");
 #endif
 
@@ -1266,14 +1411,17 @@ dma_request_end:
 static IMG_VOID __exit OMAPLFB_Cleanup(IMG_VOID)
 {    
 #if defined(LDM_PLATFORM)
+#if 0
+	DEBUG_PRINTK(format,...)("Removing platform device");
+	platform_device_unregister(&omaplfb_device);
+#endif
 	DEBUG_PRINTK("Removing platform driver");
 	platform_driver_unregister(&omaplfb_driver);
 #if defined(SGX_EARLYSUSPEND) && defined(CONFIG_HAS_EARLYSUSPEND)
-        unregister_early_suspend(&omaplfb_early_suspend);
+	DEBUG_PRINTK("Removed early suspend support");
+	unregister_early_suspend(&omaplfb_early_suspend);
 #endif
 #endif
-	if(OMAPLFBDeinit() != OMAP_OK)
-		WARNING_PRINTK("Driver cleanup failed");
 }
 
 late_initcall(OMAPLFB_Init);

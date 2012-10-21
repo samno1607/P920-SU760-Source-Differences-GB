@@ -129,7 +129,10 @@ int adxl346_read(void *mlsl_handle,
 		 struct ext_slave_platform_data *pdata,
 		 unsigned char *data)
 {
-	return ML_ERROR_FEATURE_NOT_IMPLEMENTED;
+	int result;
+	result = MLSLSerialRead(mlsl_handle, pdata->address,
+				slave->reg, slave->len, data);
+	return result;
 }
 
 struct ext_slave_descr adxl346_descr = {
@@ -139,6 +142,7 @@ struct ext_slave_descr adxl346_descr = {
 	/*.resume           = */ adxl346_resume,
 	/*.read             = */ adxl346_read,
 	/*.config           = */ NULL,
+	/*.get_config       = */ NULL,
 	/*.name             = */ "adx1346",
 	/*.type             = */ EXT_SLAVE_TYPE_ACCELEROMETER,
 	/*.id               = */ ACCEL_ID_ADI346,
