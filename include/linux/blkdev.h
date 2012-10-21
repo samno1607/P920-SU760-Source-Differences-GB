@@ -772,7 +772,7 @@ static inline void rq_flush_dcache_pages(struct request *rq)
 extern int blk_register_queue(struct gendisk *disk);
 extern void blk_unregister_queue(struct gendisk *disk);
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH		
 
 extern int register_disk(struct gendisk *dev);
 

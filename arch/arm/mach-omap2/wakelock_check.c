@@ -95,14 +95,14 @@ static void wakelock_check_wq (struct work_struct *unused)
 		}
 	}
 	else
-		abnormal_wake_unlock_call(0);					
+		abnormal_wake_unlock_call(0);							
 /*
 	if(tiler_memory_free_flag > 1)
 	{
 		printk(KERN_INFO "free tmm_dmm, tiler_memory_free_flag =%d\n", tiler_memory_free_flag);
 		if(dss_get_mainclk_state() == false)
 		{
-			tmm_dmm_free_page_stack();	
+			tmm_dmm_free_page_stack();	 
 			tiler_memory_free_flag=0;		
 		}
 	}

@@ -145,7 +145,7 @@ probe_failed:
 		       drv->name, dev_name(dev), ret);
 	}
 
-#ifdef CONFIG_MACH_LGE_MMC_REFRESH	
+#ifdef CONFIG_MACH_LGE_MMC_REFRESH	  
 
 	if (ret == 0xbcbc) {
 		/* driver matched but the probe failed */
@@ -163,7 +163,7 @@ probe_failed:
 	ret = 0;
 
 
-#endif								 
+#endif								  
 
 done:
 	atomic_dec(&probe_count);

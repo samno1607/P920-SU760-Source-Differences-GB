@@ -702,7 +702,7 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 
 		save_secure_all();
 
-		save_gic_wakeupgen_secure();		// ES2.2
+		save_gic_wakeupgen_secure();		//  ES2.2
 
 		if (inst_clk_enab == 1)
 			clk_disable(l3_main_3_ick);
